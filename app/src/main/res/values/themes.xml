@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.MTGScanBuild" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">#FF1B1424</item>
+        <item name="android:navigationBarColor">#FF1B1424</item>
+        <item name="android:windowBackground">#FF1B1424</item>
+    </style>
+</resources>

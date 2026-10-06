@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- stacked cards -->
+    <path android:fillColor="#FF7E57C2" android:pathData="M40,30h26a4,4 0 0 1 4,4v40a4,4 0 0 1 -4,4h-26a4,4 0 0 1 -4,-4v-40a4,4 0 0 1 4,-4z" />
+    <path android:fillColor="#FFF5E6C8" android:pathData="M44,26h26a4,4 0 0 1 4,4v40a4,4 0 0 1 -4,4h-26a4,4 0 0 1 -4,-4v-40a4,4 0 0 1 4,-4z" />
+    <!-- mana-like gem -->
+    <path android:fillColor="#FFE65100" android:pathData="M57,36l9,14l-9,14l-9,-14z" />
+    <path android:fillColor="#FFFFB74D" android:pathData="M57,42l5,8l-5,8l-5,-8z" />
+</vector>

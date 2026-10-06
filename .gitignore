@@ -1,0 +1,26 @@
+# Gradle / Kotlin
+.gradle/
+.kotlin/
+build/
+**/build/
+
+# Local machine config (Android SDK path)
+local.properties
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Built APKs (published as GitHub Release assets instead)
+*.apk
+*.aab
+
+# Signing keys
+*.jks
+*.keystore
+*.p12
+
+# OS
+.DS_Store
+Thumbs.db
