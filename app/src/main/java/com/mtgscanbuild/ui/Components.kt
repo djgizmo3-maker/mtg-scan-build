@@ -1,5 +1,6 @@
 package com.mtgscanbuild.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -50,7 +51,10 @@ fun rememberRepo(): Repository {
 
 @Composable
 fun CardThumb(url: String?, modifier: Modifier = Modifier.size(width = 48.dp, height = 67.dp)) {
-    AsyncImage(model = url, contentDescription = null, modifier = modifier.clip(RoundedCornerShape(4.dp)))
+    val ctx = LocalContext.current
+    val show = remember { (ctx.applicationContext as MtgApp).settings }.showImages
+    if (show) AsyncImage(model = url, contentDescription = null, modifier = modifier.clip(RoundedCornerShape(4.dp)))
+    else Box(modifier.clip(RoundedCornerShape(4.dp)).background(MaterialTheme.colorScheme.surfaceVariant))
 }
 
 fun compactCost(cost: String) = cost.replace("}{", " ").replace("{", "").replace("}", "")

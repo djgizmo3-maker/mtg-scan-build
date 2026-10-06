@@ -5,8 +5,6 @@ import android.app.Application
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.RectF
-import android.media.AudioManager
-import android.media.ToneGenerator
 import android.net.Uri
 import android.provider.Settings
 import android.util.Log
@@ -94,23 +92,33 @@ import java.util.concurrent.Executors
 
 class ScanViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = app.repo
+    val settings = app.settings
+    private val sounds = app.sounds
 
     var indexProblem by mutableStateOf<String?>("Loading card name database…")
     var current by mutableStateOf<CardData?>(null)
     var quantity by mutableIntStateOf(1)
     var foil by mutableStateOf(false)
-    var autoAdd by mutableStateOf(false)
+    var autoAdd: Boolean
+        get() = settings.autoAdd
+        set(v) { settings.autoAdd = v }
     var paused by mutableStateOf(false)
-    var torch by mutableStateOf(false)
+    var torch by mutableStateOf(settings.startWithLight)
     var status by mutableStateOf("Hold a card inside the frame")
     val recent = mutableStateListOf<String>()
     var sessionCount by mutableIntStateOf(0)
     var canUndo by mutableStateOf(false)
-    var beep by mutableStateOf(true)
+
+    fun toggleSound() {
+        settings.soundOn = !settings.soundOn
+        if (settings.soundOn) {
+            sounds.preview()
+            if (sounds.mediaMuted) status = "Media volume is muted – turn it up to hear scan sounds"
+        }
+    }
 
     private data class Added(val card: CardData, val qty: Int, val foil: Boolean)
     private val history = ArrayDeque<Added>()
-    private val tone = runCatching { ToneGenerator(AudioManager.STREAM_NOTIFICATION, 70) }.getOrNull()
     /** Set by the screen to give haptic feedback when a card is added. */
     var onAddedFeedback: (() -> Unit)? = null
 
@@ -158,16 +166,20 @@ class ScanViewModel(app: Application) : AndroidViewModel(app) {
         }
         lastSeen = now
         if (m.name == pendingName) pendingCount++ else { pendingName = m.name; pendingCount = 1 }
-        // Confident reads need two agreeing frames; fuzzy reads need three to avoid false positives.
-        if (pendingCount < (if (m.score >= 0.9) 2 else 3)) return
+        // Confident reads need fewer agreeing frames than fuzzy ones; the counts come from Settings.
+        val s = settings.sensitivity
+        if (pendingCount < (if (m.score >= 0.9) s.confidentFrames else s.fuzzyFrames)) return
 
+        var announced = false
         if (!same(current?.frontName, m.name)) {
             val card = lookup(m) ?: return
             current = card
             quantity = 1
             status = "Found: ${card.name}"
+            sounds.play()
+            announced = true
         }
-        if (autoAdd && !same(lastAddedName, m.name)) add()
+        if (autoAdd && !same(lastAddedName, m.name)) add(playSound = !announced)
     }
 
     private suspend fun lookup(m: ScanMatch): CardData? {
@@ -218,13 +230,14 @@ class ScanViewModel(app: Application) : AndroidViewModel(app) {
                 current = card
                 quantity = 1
                 status = "Found in photo: ${card.name}"
+                sounds.play()
             } catch (e: Exception) {
                 status = "Couldn't read photo – ${e.message}"
             }
         }
     }
 
-    fun add() {
+    fun add(playSound: Boolean = true) {
         val c = current ?: return
         val q = quantity
         val f = foil
@@ -239,8 +252,8 @@ class ScanViewModel(app: Application) : AndroidViewModel(app) {
             if (recent.size > 50) recent.removeAt(recent.lastIndex)
             status = "Added $q× ${c.name}"
             quantity = 1
-            if (beep) tone?.startTone(ToneGenerator.TONE_PROP_ACK, 120)
-            onAddedFeedback?.invoke()
+            if (playSound) sounds.play()
+            if (settings.vibrate) onAddedFeedback?.invoke()
         }
     }
 
@@ -258,7 +271,6 @@ class ScanViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     override fun onCleared() {
-        tone?.release()
         runCatching { photoRecognizer.close() }
     }
 }
@@ -290,7 +302,7 @@ fun ScanScreen(vm: ScanViewModel = viewModel()) {
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxWidth().weight(1f).background(Color.Black)) {
             if (hasPermission) {
-                CameraPreview(onReading = vm::onReading, torch = vm.torch, paused = vm.paused, modifier = Modifier.fillMaxSize())
+                CameraPreview(onReading = vm::onReading, torch = vm.torch, paused = vm.paused, keepScreenOn = vm.settings.keepScreenOn, modifier = Modifier.fillMaxSize())
             } else {
                 Column(Modifier.align(Alignment.Center).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("Camera permission is needed to scan cards.", color = Color.White)
@@ -350,16 +362,16 @@ fun ScanScreen(vm: ScanViewModel = viewModel()) {
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = vm::add, Modifier.weight(1f)) { Text("Add to collection") }
+                        Button(onClick = { vm.add() }, Modifier.weight(1f)) { Text("Add to collection") }
                         OutlinedButton(onClick = { showPrintings = true }) { Text("Set / printing") }
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Switch(vm.autoAdd, { vm.autoAdd = it })
                     Text("  Auto-add", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                    Switch(vm.beep, { vm.beep = it })
-                    Text("  Beep", style = MaterialTheme.typography.bodySmall)
-                    Spacer(Modifier.width(8.dp))
+                    TextButton(onClick = vm::toggleSound) {
+                        Text(if (vm.settings.soundOn) "Sound on" else "Sound off")
+                    }
                     TextButton(onClick = vm::undo, enabled = vm.canUndo) { Text("Undo") }
                 }
                 Text("${vm.sessionCount} card${if (vm.sessionCount == 1) "" else "s"} added this session", style = MaterialTheme.typography.bodySmall)
@@ -376,7 +388,7 @@ fun ScanScreen(vm: ScanViewModel = viewModel()) {
 }
 
 @Composable
-fun CameraPreview(onReading: (ScanReading) -> Unit, torch: Boolean, paused: Boolean, modifier: Modifier = Modifier) {
+fun CameraPreview(onReading: (ScanReading) -> Unit, torch: Boolean, paused: Boolean, keepScreenOn: Boolean, modifier: Modifier = Modifier) {
     val ctx = LocalContext.current
     val owner = LocalLifecycleOwner.current
     val latest by rememberUpdatedState(onReading)
@@ -386,10 +398,10 @@ fun CameraPreview(onReading: (ScanReading) -> Unit, torch: Boolean, paused: Bool
     val previewView = remember {
         PreviewView(ctx).apply {
             scaleType = PreviewView.ScaleType.FILL_CENTER
-            keepScreenOn = true
             this.controller = controller
         }
     }
+    SideEffect { previewView.keepScreenOn = keepScreenOn }
     var error by remember { mutableStateOf<String?>(null) }
     var ready by remember { mutableStateOf(false) }
 

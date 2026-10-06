@@ -4,10 +4,12 @@ An Android app that scans your Magic: The Gathering cards with the phone camera,
 
 ## Features
 
-- **Camera scanning:** on-device text recognition (ML Kit) reads the card name inside an on-screen frame and fuzzy-matches it against every card name on Scryfall. Includes tap-to-focus, pinch-to-zoom, a flashlight toggle, optional auto-add with beep/vibration, and Undo.
+- **Camera scanning:** on-device text recognition (ML Kit) reads the card name inside an on-screen frame and fuzzy-matches it against every card name on Scryfall. Includes tap-to-focus, pinch-to-zoom, a flashlight toggle, optional auto-add, a scan sound with vibration, and Undo.
+- **Scan sounds:** choose from Chime, Classic scanner beep, Coin, Mana sparkle, Bell ding, Laser, Deep thump, or your own audio file. Sounds use the media volume, so they work on vibrate.
 - **Photo and search:** recognize a card from a gallery picture, or search by name.
 - **Collection:** quantities, foils, set/printing choice, filters by color/type, search by name, type or rules text, CSV/list import and CSV export.
 - **Deck builder:** generates decks from your collection for Standard, Pioneer, Modern, Legacy, Vintage, Pauper, Commander, Duel Commander, PDH, PreDH, Oathbreaker, Brawl, Standard Brawl, and the Arena formats. Every deck is checked for format legality and ownership, and shows its mana curve.
+- **Settings tab:** scan sound, volume, auto-add, vibration, keep-screen-on, start with the light on, and recognition strictness. Also theme (dark/light/follow phone), accent color (including Android 12+ wallpaper colors), card pictures on or off, default deck format and basic-lands default. You can also update the card-name list and clear the image cache.
 
 Market prices are intentionally not tracked.
 

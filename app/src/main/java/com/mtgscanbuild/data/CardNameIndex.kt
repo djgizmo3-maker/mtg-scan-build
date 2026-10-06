@@ -50,6 +50,24 @@ class CardNameIndex(dir: File, private val api: ScryfallApi) {
         }
     }
 
+    /** Downloads the latest card name list now (e.g. after a new set releases). */
+    suspend fun refresh(): Boolean = mutex.withLock {
+        withContext(Dispatchers.IO) {
+            try {
+                val names = api.cardNames()
+                if (names.size > 1000) {
+                    file.writeText(names.joinToString("\n"))
+                    build(names)
+                }
+                lastError = null
+                true
+            } catch (e: Exception) {
+                lastError = e.toString()
+                false
+            }
+        }
+    }
+
     private fun build(names: List<String>) {
         val map = HashMap<String, Entry>(names.size * 2)
         for (full in names) {

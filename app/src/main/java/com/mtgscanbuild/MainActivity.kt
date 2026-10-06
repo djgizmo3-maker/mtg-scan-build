@@ -8,6 +8,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -30,6 +31,7 @@ import com.mtgscanbuild.ui.CollectionScreen
 import com.mtgscanbuild.ui.DeckDetailScreen
 import com.mtgscanbuild.ui.DecksScreen
 import com.mtgscanbuild.ui.ScanScreen
+import com.mtgscanbuild.ui.SettingsScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -45,6 +47,7 @@ private val tabs = listOf(
     Tab("scan", "Scan", Icons.Filled.Search),
     Tab("collection", "Collection", Icons.Filled.List),
     Tab("decks", "Decks", Icons.Filled.Build),
+    Tab("settings", "Settings", Icons.Filled.Settings),
 )
 
 @Composable
@@ -74,6 +77,7 @@ fun AppRoot() {
     ) { pad ->
         NavHost(nav, startDestination = "scan", modifier = Modifier.padding(pad)) {
             composable("scan") { ScanScreen() }
+            composable("settings") { SettingsScreen() }
             composable("collection") { CollectionScreen(onOpen = { nav.navigate("card/$it") }) }
             composable("card/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) {
                 CardDetailScreen(it.arguments!!.getLong("id"), onBack = { nav.popBackStack() })

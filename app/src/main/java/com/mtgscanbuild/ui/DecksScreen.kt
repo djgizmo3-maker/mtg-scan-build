@@ -101,11 +101,12 @@ fun DecksScreen(onBuild: () -> Unit, onOpen: (Long) -> Unit) {
 
 class BuilderViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = app.repo
-    var format by mutableStateOf(Formats.byId("commander"))
+    private val settings = app.settings
+    var format by mutableStateOf(Formats.byId(settings.defaultFormat))
     var colors by mutableStateOf(setOf<Char>())
     var commander by mutableStateOf<String?>(null)
     var buildAround by mutableStateOf("")
-    var assumeBasics by mutableStateOf(true)
+    var assumeBasics by mutableStateOf(settings.assumeBasics)
     var commanderOptions by mutableStateOf<List<String>>(emptyList())
     var results by mutableStateOf<List<BuiltDeck>?>(null)
     var building by mutableStateOf(false)
