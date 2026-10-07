@@ -121,6 +121,8 @@ data class BuildOptions(
     val buildAround: String? = null,
     val assumeBasics: Boolean = true,
     val maxResults: Int = 6,
+    /** Build only colorless decks (ignored when [colors] is not empty). */
+    val colorless: Boolean = false,
 )
 
 class DeckBuilder(collection: List<CollectionCard>) {
@@ -389,6 +391,7 @@ class DeckBuilder(collection: List<CollectionCard>) {
     private fun buildConstructedDecks(f: Format, pool: List<PoolCard>, opts: BuildOptions): List<BuiltDeck> {
         val around = findCard(pool, opts.buildAround)
         val combos = if (opts.colors.isNotEmpty()) listOf(opts.colors)
+        else if (opts.colorless) listOf(emptySet())
         else allCombos().filter { around == null || it.containsAll(around.identity) }
         val decks = combos.mapNotNull { buildConstructed(f, pool, it, opts, around) }
         return pickDistinct(decks, opts.maxResults)
@@ -483,6 +486,7 @@ class DeckBuilder(collection: List<CollectionCard>) {
         else {
             if (around != null) cands = cands.filter { it.identity.containsAll(around.identity) }
             if (opts.colors.isNotEmpty()) cands = cands.filter { it.identity == opts.colors }
+            else if (opts.colorless) cands = cands.filter { it.identity.isEmpty() }
             // Pre-rank commanders by card quality and how many owned cards fit their colors.
             val mainPool = mainPool(f, pool)
             cands = cands.sortedByDescending { c ->

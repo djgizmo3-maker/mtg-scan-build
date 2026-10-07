@@ -7,6 +7,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -58,6 +61,39 @@ fun CardThumb(url: String?, modifier: Modifier = Modifier.size(width = 48.dp, he
 }
 
 fun compactCost(cost: String) = cost.replace("}{", " ").replace("{", "").replace("}", "")
+
+/** Card picture by name from Scryfall, used when a deck entry has no stored image. */
+fun scryfallImageByName(name: String) =
+    "https://api.scryfall.com/cards/named?format=image&version=normal&exact=" + android.net.Uri.encode(name)
+
+/** Large picture of a card plus a few lines of info. */
+@Composable
+fun CardPreviewDialog(
+    name: String,
+    imageUrl: String?,
+    typeLine: String,
+    details: List<String>,
+    onDismiss: () -> Unit,
+    extraButton: (@Composable () -> Unit)? = null,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+        dismissButton = extraButton,
+        title = { Text(name) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                AsyncImage(
+                    model = imageUrl ?: scryfallImageByName(name), contentDescription = name,
+                    modifier = Modifier.fillMaxWidth().aspectRatio(63f / 88f).clip(RoundedCornerShape(12.dp))
+                )
+                Spacer(Modifier.height(8.dp))
+                if (typeLine.isNotBlank()) Text(typeLine, style = MaterialTheme.typography.bodySmall)
+                details.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
+            }
+        }
+    )
+}
 
 /** Lets the user choose a specific printing (set) of a card. */
 @Composable

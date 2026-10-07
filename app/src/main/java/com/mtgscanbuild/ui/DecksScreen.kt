@@ -5,6 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -55,6 +57,7 @@ import com.mtgscanbuild.deck.BuildOptions
 import com.mtgscanbuild.deck.BuiltDeck
 import com.mtgscanbuild.deck.DeckBuilder
 import com.mtgscanbuild.deck.DeckCompare
+import com.mtgscanbuild.deck.DeckEntry
 import com.mtgscanbuild.deck.Format
 import com.mtgscanbuild.deck.Formats
 import kotlinx.coroutines.Dispatchers
@@ -110,6 +113,7 @@ class BuilderViewModel(app: Application) : AndroidViewModel(app) {
     private val settings = app.settings
     var format by mutableStateOf(Formats.byId(settings.defaultFormat))
     var colors by mutableStateOf(setOf<Char>())
+    var colorless by mutableStateOf(false)
     var commander by mutableStateOf<String?>(null)
     var buildAround by mutableStateOf("")
     var assumeBasics by mutableStateOf(settings.assumeBasics)
@@ -144,7 +148,7 @@ class BuilderViewModel(app: Application) : AndroidViewModel(app) {
             building = true
             results = null
             val all = repo.allCards()
-            val opts = BuildOptions(colors, commander, buildAround.trim().ifEmpty { null }, assumeBasics)
+            val opts = BuildOptions(colors, commander, buildAround.trim().ifEmpty { null }, assumeBasics, colorless = colorless)
             val f = format
             val (index, built) = withContext(Dispatchers.Default) {
                 DeckCompare.OwnedIndex(all) to DeckBuilder(all).build(f, opts)
@@ -158,7 +162,7 @@ class BuilderViewModel(app: Application) : AndroidViewModel(app) {
     fun save(d: BuiltDeck, onSaved: (Long) -> Unit) = viewModelScope.launch { onSaved(repo.saveDeck(d)) }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 @Suppress("DEPRECATION")
 fun BuilderScreen(onBack: () -> Unit, onSaved: (Long) -> Unit, onMoxfield: () -> Unit, vm: BuilderViewModel = viewModel()) {
@@ -188,16 +192,31 @@ fun BuilderScreen(onBack: () -> Unit, onSaved: (Long) -> Unit, onMoxfield: () ->
                 Spacer(Modifier.height(12.dp))
 
                 Text(
-                    if (vm.format.hasCommander) "Color identity (optional, exact match)" else "Colors (optional — empty tries every 1-3 color combination)",
+                    if (vm.format.hasCommander) "Color identity (optional, exact match)" else "Colors (optional — none selected tries every 1-3 color combination)",
                     style = MaterialTheme.typography.labelLarge
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    "WUBRG".forEach { c ->
-                        FilterChip(selected = c in vm.colors, onClick = {
-                            vm.colors = if (c in vm.colors) vm.colors - c else vm.colors + c
-                        }, label = { Text(c.toString()) })
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    "WUCBGR".forEach { c ->
+                        val isColorless = c == 'C'
+                        val selected = if (isColorless) vm.colorless else c in vm.colors
+                        FilterChip(
+                            selected = selected,
+                            onClick = {
+                                if (isColorless) {
+                                    vm.colorless = !vm.colorless
+                                    if (vm.colorless) vm.colors = emptySet()
+                                } else {
+                                    vm.colors = if (c in vm.colors) vm.colors - c else vm.colors + c
+                                    vm.colorless = false
+                                }
+                            },
+                            leadingIcon = { ManaPip(c, 20.dp) },
+                            label = { Text(colorAbbrev(c), fontWeight = FontWeight.Bold) },
+                        )
                     }
                 }
+                val picked = if (vm.colorless) "Colorless" else "WUBRG".filter { it in vm.colors }.map(::colorFullName).joinToString(", ")
+                if (picked.isNotEmpty()) Text(picked, style = MaterialTheme.typography.bodySmall)
 
                 if (vm.format.hasCommander) {
                     Spacer(Modifier.height(8.dp))
@@ -251,6 +270,7 @@ fun BuilderScreen(onBack: () -> Unit, onSaved: (Long) -> Unit, onMoxfield: () ->
 @Composable
 private fun BuiltDeckCard(d: BuiltDeck, owned: DeckCompare.OwnedIndex, onSave: () -> Unit) {
     var expanded by remember { mutableStateOf(false) }
+    var preview by remember { mutableStateOf<DeckEntry?>(null) }
     val value = remember(d, owned) { d.entries.sumOf { e -> (owned.cheapestPrice(e.name) ?: e.priceUsd ?: 0.0) * e.quantity } }
     Card(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
         Column(Modifier.padding(12.dp)) {
@@ -277,7 +297,10 @@ private fun BuiltDeckCard(d: BuiltDeck, owned: DeckCompare.OwnedIndex, onSave: (
                     val list = groups[cat] ?: return@forEach
                     SectionHeader("$cat (${list.sumOf { it.quantity }})")
                     list.sortedWith(compareBy({ it.cmc }, { it.name })).forEach { e ->
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            Modifier.fillMaxWidth().clickable { preview = e }.padding(vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             Text("${e.quantity}", Modifier.width(28.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(e.name, style = MaterialTheme.typography.bodyMedium)
@@ -292,5 +315,13 @@ private fun BuiltDeckCard(d: BuiltDeck, owned: DeckCompare.OwnedIndex, onSave: (
                 }
             }
         }
+    }
+    preview?.let { e ->
+        CardPreviewDialog(
+            name = e.name, imageUrl = e.imageUrl, typeLine = e.typeLine,
+            details = listOf("${e.quantity}× in deck · ${formatUsd(owned.cheapestPrice(e.name) ?: e.priceUsd)} each (TCGplayer)") +
+                owned.printings(e.name).map { "• ${it.setName} (${it.label})" },
+            onDismiss = { preview = null },
+        )
     }
 }

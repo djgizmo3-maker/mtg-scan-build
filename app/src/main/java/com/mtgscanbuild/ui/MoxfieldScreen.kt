@@ -331,7 +331,16 @@ private fun MoxDeckDetail(deck: MoxDeck, cmp: DeckComparison, format: Format, on
 
 @Composable
 private fun ComparedRow(c: ComparedCard) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    var preview by remember { mutableStateOf(false) }
+    if (preview) CardPreviewDialog(
+        name = c.name, imageUrl = c.imageUrl, typeLine = c.typeLine,
+        details = listOf(
+            "Deck needs ${c.quantity} · you own ${c.owned}" + (if (c.missing > 0) " · missing ${c.missing}" else ""),
+            "${formatUsd(c.unitPrice)} each (TCGplayer)",
+        ) + c.printings.map { "• ${it.setName} (${it.label})" },
+        onDismiss = { preview = false },
+    )
+    Row(Modifier.fillMaxWidth().clickable { preview = true }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Text("${c.quantity}", Modifier.width(28.dp))
         Column(Modifier.weight(1f)) {
             Text(c.name, maxLines = 1, overflow = TextOverflow.Ellipsis,

@@ -3,7 +3,7 @@ package com.mtgscanbuild.ui
 import android.app.Activity
 import android.app.Application
 import android.os.Build
-import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -26,10 +26,11 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.mtgscanbuild.MtgApp
+import com.mtgscanbuild.R
 import com.mtgscanbuild.data.Accent
 import com.mtgscanbuild.data.AppSettings
 import com.mtgscanbuild.data.Repository
@@ -104,16 +105,34 @@ fun manaColor(c: Char): Color = when (c) {
     else -> Color(0xFFB0B0B0)
 }
 
-/** Small colored pips, e.g. for "WU". Empty string shows a colorless pip. */
+fun manaIcon(c: Char): Int = when (c.uppercaseChar()) {
+    'W' -> R.drawable.mana_w
+    'U' -> R.drawable.mana_u
+    'B' -> R.drawable.mana_b
+    'R' -> R.drawable.mana_r
+    'G' -> R.drawable.mana_g
+    else -> R.drawable.mana_c
+}
+
+/** Short color labels: W, BL, BK, R, G, CL. */
+fun colorAbbrev(c: Char): String = when (c.uppercaseChar()) {
+    'W' -> "W"; 'U' -> "BL"; 'B' -> "BK"; 'R' -> "R"; 'G' -> "G"; else -> "CL"
+}
+
+fun colorFullName(c: Char): String = when (c.uppercaseChar()) {
+    'W' -> "White"; 'U' -> "Blue"; 'B' -> "Black"; 'R' -> "Red"; 'G' -> "Green"; else -> "Colorless"
+}
+
+/** A single mana symbol icon. */
 @Composable
-fun ColorPips(colors: String, modifier: Modifier = Modifier) {
+fun ManaPip(c: Char, size: Dp = 18.dp, modifier: Modifier = Modifier) {
+    Image(painterResource(manaIcon(c)), colorFullName(c), modifier.size(size))
+}
+
+/** Mana symbol icons, e.g. for "WU". Empty string shows a colorless pip. */
+@Composable
+fun ColorPips(colors: String, modifier: Modifier = Modifier, size: Dp = 18.dp) {
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        val list = colors.ifEmpty { "C" }
-        list.forEach { c ->
-            Box(
-                Modifier.padding(end = 3.dp).size(18.dp).background(manaColor(c), CircleShape),
-                contentAlignment = Alignment.Center
-            ) { Text(c.toString(), color = Color.Black, fontSize = 10.sp, fontWeight = FontWeight.Bold) }
-        }
+        colors.ifEmpty { "C" }.forEach { c -> ManaPip(c, size, Modifier.padding(end = 3.dp)) }
     }
 }

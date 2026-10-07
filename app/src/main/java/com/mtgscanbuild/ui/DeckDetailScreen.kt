@@ -189,24 +189,16 @@ fun DeckDetailScreen(id: Long, onBack: () -> Unit) {
     }
 
     preview?.let { c ->
-        AlertDialog(
-            onDismissRequest = { preview = null },
-            confirmButton = { TextButton(onClick = { preview = null }) { Text("Close") } },
-            dismissButton = {
+        CardPreviewDialog(
+            name = c.name,
+            imageUrl = c.imageUrl ?: collection.firstOrNull { it.card.name == c.name }?.card?.imageUrlLarge,
+            typeLine = c.typeLine,
+            details = listOf("You own ${index.count(c.name)} · ${formatUsd(unitPrice(c))} each (TCGplayer)") +
+                index.printings(c.name).map { p -> "• ${p.setName} (${p.label})" },
+            onDismiss = { preview = null },
+            extraButton = {
                 TextButton(onClick = { scope.launch { repo.setDeckCardQuantity(c, 0) }; preview = null }) { Text("Remove from deck") }
             },
-            title = { Text(c.name) },
-            text = {
-                Column {
-                    val img = c.imageUrl ?: collection.firstOrNull { it.card.name == c.name }?.card?.imageUrlLarge
-                    if (img != null) AsyncImage(img, c.name, Modifier.fillMaxWidth().aspectRatio(63f / 88f))
-                    Text(c.typeLine, style = MaterialTheme.typography.bodySmall)
-                    Text("You own ${index.count(c.name)} · ${formatUsd(unitPrice(c))} each (TCGplayer)", style = MaterialTheme.typography.bodySmall)
-                    index.printings(c.name).forEach { p ->
-                        Text("• ${p.setName} (${p.label})", style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-            }
         )
     }
     if (showAdd && d != null) AddFromCollectionDialog(
