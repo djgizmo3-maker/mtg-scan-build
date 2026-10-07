@@ -1,5 +1,6 @@
 package com.mtgscanbuild.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Delete
@@ -13,6 +14,8 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Transaction
 import androidx.room.Update
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import android.content.Context
 import kotlinx.coroutines.flow.Flow
 
@@ -40,7 +43,21 @@ data class CardData(
     val imageUrl: String?,
     val imageUrlLarge: String?,
     val edhrecRank: Int?,
+    /** TCGplayer Market Price in USD (as published by Scryfall), null when unknown. */
+    val priceUsd: Double? = null,
+    val priceUsdFoil: Double? = null,
+    val tcgplayerUrl: String? = null,
+    /** Set release date, "yyyy-mm-dd". */
+    @ColumnInfo(defaultValue = "''") val releasedAt: String = "",
 )
+
+/** Best-known TCGplayer market price for one copy of this printing in the given finish. */
+fun CardData.price(foil: Boolean): Double? = if (foil) priceUsdFoil ?: priceUsd else priceUsd ?: priceUsdFoil
+
+val CollectionCard.unitPrice: Double? get() = card.price(foil)
+val CollectionCard.totalPrice: Double get() = (unitPrice ?: 0.0) * quantity
+
+fun formatUsd(v: Double?): String = if (v == null) "—" else "$" + String.format(java.util.Locale.US, "%,.2f", v)
 
 fun CardData.legalityMap(): Map<String, String> =
     legalities.split(';').mapNotNull {
@@ -73,6 +90,8 @@ data class DeckEntity(
     val commander: String?,
     val description: String,
     val createdAt: Long,
+    /** Where the list came from (e.g. a Moxfield deck URL), null for generated decks. */
+    val sourceUrl: String? = null,
 )
 
 @Entity(tableName = "deck_cards", indices = [Index("deckId")])
@@ -87,6 +106,8 @@ data class DeckCardEntity(
     val manaCost: String,
     val cmc: Double,
     val imageUrl: String?,
+    /** TCGplayer market price of one copy, used for cards you don't own. */
+    val priceUsd: Double? = null,
 )
 
 @Dao
@@ -167,7 +188,7 @@ interface DeckDao {
 
 @Database(
     entities = [CollectionCard::class, DeckEntity::class, DeckCardEntity::class],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -175,7 +196,19 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun decks(): DeckDao
 
     companion object {
+        /** v2: TCGplayer prices, release dates and deck source links. */
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE collection ADD COLUMN priceUsd REAL")
+                db.execSQL("ALTER TABLE collection ADD COLUMN priceUsdFoil REAL")
+                db.execSQL("ALTER TABLE collection ADD COLUMN tcgplayerUrl TEXT")
+                db.execSQL("ALTER TABLE collection ADD COLUMN releasedAt TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE decks ADD COLUMN sourceUrl TEXT")
+                db.execSQL("ALTER TABLE deck_cards ADD COLUMN priceUsd REAL")
+            }
+        }
+
         fun create(context: Context): AppDatabase =
-            Room.databaseBuilder(context, AppDatabase::class.java, "mtg.db").build()
+            Room.databaseBuilder(context, AppDatabase::class.java, "mtg.db").addMigrations(MIGRATION_1_2).build()
     }
 }

@@ -130,6 +130,8 @@ class ScryfallApi {
             }
             val legal = j.optJSONObject("legalities")
             val legalStr = legal?.keys()?.asSequence()?.joinToString(";") { "$it=${legal.getString(it)}" } ?: ""
+            val prices = j.optJSONObject("prices")
+            fun price(key: String) = prices?.str(key)?.toDoubleOrNull()
             return CardData(
                 scryfallId = j.getString("id"),
                 oracleId = j.str("oracle_id") ?: f0?.str("oracle_id") ?: "",
@@ -153,6 +155,11 @@ class ScryfallApi {
                 imageUrl = images?.str("small"),
                 imageUrlLarge = images?.str("normal"),
                 edhrecRank = if (j.has("edhrec_rank") && !j.isNull("edhrec_rank")) j.getInt("edhrec_rank") else null,
+                // Scryfall's USD prices are TCGplayer Market Prices.
+                priceUsd = price("usd"),
+                priceUsdFoil = price("usd_foil") ?: price("usd_etched"),
+                tcgplayerUrl = j.optJSONObject("purchase_uris")?.str("tcgplayer"),
+                releasedAt = j.str("released_at") ?: "",
             )
         }
     }

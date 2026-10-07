@@ -30,6 +30,7 @@ import com.mtgscanbuild.ui.CardDetailScreen
 import com.mtgscanbuild.ui.CollectionScreen
 import com.mtgscanbuild.ui.DeckDetailScreen
 import com.mtgscanbuild.ui.DecksScreen
+import com.mtgscanbuild.ui.MoxfieldScreen
 import com.mtgscanbuild.ui.ScanScreen
 import com.mtgscanbuild.ui.SettingsScreen
 
@@ -83,10 +84,16 @@ fun AppRoot() {
                 CardDetailScreen(it.arguments!!.getLong("id"), onBack = { nav.popBackStack() })
             }
             composable("decks") {
-                DecksScreen(onBuild = { nav.navigate("builder") }, onOpen = { nav.navigate("deck/$it") })
+                DecksScreen(onBuild = { nav.navigate("builder") }, onOpen = { nav.navigate("deck/$it") },
+                    onMoxfield = { nav.navigate("moxfield") })
             }
             composable("builder") {
                 BuilderScreen(onBack = { nav.popBackStack() }, onSaved = { id ->
+                    nav.navigate("deck/$id") { popUpTo("decks") }
+                }, onMoxfield = { nav.navigate("moxfield") })
+            }
+            composable("moxfield") {
+                MoxfieldScreen(onBack = { nav.popBackStack() }, onSaved = { id ->
                     nav.navigate("deck/$id") { popUpTo("decks") }
                 })
             }

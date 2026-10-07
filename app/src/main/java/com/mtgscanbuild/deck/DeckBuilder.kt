@@ -98,6 +98,7 @@ data class DeckEntry(
     val manaCost: String,
     val cmc: Double,
     val imageUrl: String?,
+    val priceUsd: Double? = null,
 )
 
 data class BuiltDeck(
@@ -337,13 +338,14 @@ class DeckBuilder(collection: List<CollectionCard>) {
     }
 
     private fun entry(p: PoolCard, n: Int, section: String = "main") = DeckEntry(
-        p.card.name, n, section, p.card.typeLine, p.card.manaCost, p.card.cmc, p.card.imageUrlLarge ?: p.card.imageUrl
+        p.card.name, n, section, p.card.typeLine, p.card.manaCost, p.card.cmc, p.card.imageUrlLarge ?: p.card.imageUrl,
+        p.card.priceUsd
     )
 
     private fun basicEntry(pool: List<PoolCard>, name: String, n: Int): DeckEntry {
         val owned = pool.firstOrNull { it.name == name }
         return DeckEntry(name, n, "main", owned?.card?.typeLine ?: "Basic Land — $name", "", 0.0,
-            owned?.card?.imageUrlLarge)
+            owned?.card?.imageUrlLarge, owned?.card?.priceUsd)
     }
 
     private fun dominantTribe(cards: List<PoolCard>): String? {

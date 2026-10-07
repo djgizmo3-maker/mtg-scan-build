@@ -50,9 +50,11 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.mtgscanbuild.data.formatUsd
 import com.mtgscanbuild.deck.BuildOptions
 import com.mtgscanbuild.deck.BuiltDeck
 import com.mtgscanbuild.deck.DeckBuilder
+import com.mtgscanbuild.deck.DeckCompare
 import com.mtgscanbuild.deck.Format
 import com.mtgscanbuild.deck.Formats
 import kotlinx.coroutines.Dispatchers
@@ -64,18 +66,22 @@ import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DecksScreen(onBuild: () -> Unit, onOpen: (Long) -> Unit) {
+fun DecksScreen(onBuild: () -> Unit, onOpen: (Long) -> Unit, onMoxfield: () -> Unit) {
     val repo = rememberRepo()
     val decks by remember { repo.savedDecks }.collectAsState(initial = emptyList())
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Decks") }) },
+        topBar = {
+            TopAppBar(title = { Text("Decks") }, actions = {
+                TextButton(onClick = onMoxfield) { Text("Moxfield") }
+            })
+        },
         floatingActionButton = {
             ExtendedFloatingActionButton(onClick = onBuild, icon = { Icon(Icons.Filled.Add, null) }, text = { Text("Build a deck") })
         }
     ) { pad ->
         if (decks.isEmpty()) {
             Text(
-                "No saved decks yet.\n\nTap \"Build a deck\" to generate playable decks for any format using only the cards in your collection.",
+                "No saved decks yet.\n\nTap \"Build a deck\" to generate playable decks for any format using only the cards in your collection, or tap \"Moxfield\" to compare your collection with popular Moxfield decks.",
                 Modifier.padding(pad).padding(24.dp)
             )
         }
@@ -111,6 +117,7 @@ class BuilderViewModel(app: Application) : AndroidViewModel(app) {
     var results by mutableStateOf<List<BuiltDeck>?>(null)
     var building by mutableStateOf(false)
     var legalCount by mutableStateOf(0)
+    var owned by mutableStateOf(DeckCompare.OwnedIndex(emptyList()))
     private var job: Job? = null
 
     init { selectFormat(format) }
@@ -139,7 +146,11 @@ class BuilderViewModel(app: Application) : AndroidViewModel(app) {
             val all = repo.allCards()
             val opts = BuildOptions(colors, commander, buildAround.trim().ifEmpty { null }, assumeBasics)
             val f = format
-            results = withContext(Dispatchers.Default) { DeckBuilder(all).build(f, opts) }
+            val (index, built) = withContext(Dispatchers.Default) {
+                DeckCompare.OwnedIndex(all) to DeckBuilder(all).build(f, opts)
+            }
+            owned = index
+            results = built
             building = false
         }
     }
@@ -150,7 +161,7 @@ class BuilderViewModel(app: Application) : AndroidViewModel(app) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 @Suppress("DEPRECATION")
-fun BuilderScreen(onBack: () -> Unit, onSaved: (Long) -> Unit, vm: BuilderViewModel = viewModel()) {
+fun BuilderScreen(onBack: () -> Unit, onSaved: (Long) -> Unit, onMoxfield: () -> Unit, vm: BuilderViewModel = viewModel()) {
     var formatMenu by remember { mutableStateOf(false) }
     var cmdMenu by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
@@ -220,6 +231,9 @@ fun BuilderScreen(onBack: () -> Unit, onSaved: (Long) -> Unit, vm: BuilderViewMo
                 Button(onClick = vm::build, enabled = !vm.building, modifier = Modifier.fillMaxWidth()) {
                     Text(if (vm.building) "Building…" else "Generate decks from my collection")
                 }
+                OutlinedButton(onClick = onMoxfield, modifier = Modifier.fillMaxWidth()) {
+                    Text("Compare my collection with Moxfield decks")
+                }
                 if (vm.building) Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                 Spacer(Modifier.height(12.dp))
                 val r = vm.results
@@ -228,15 +242,16 @@ fun BuilderScreen(onBack: () -> Unit, onSaved: (Long) -> Unit, vm: BuilderViewMo
                     color = MaterialTheme.colorScheme.error
                 )
             }
-            items(vm.results ?: emptyList()) { d -> BuiltDeckCard(d, onSave = { vm.save(d, onSaved) }) }
+            items(vm.results ?: emptyList()) { d -> BuiltDeckCard(d, vm.owned, onSave = { vm.save(d, onSaved) }) }
             item { Spacer(Modifier.height(24.dp)) }
         }
     }
 }
 
 @Composable
-private fun BuiltDeckCard(d: BuiltDeck, onSave: () -> Unit) {
+private fun BuiltDeckCard(d: BuiltDeck, owned: DeckCompare.OwnedIndex, onSave: () -> Unit) {
     var expanded by remember { mutableStateOf(false) }
+    val value = remember(d, owned) { d.entries.sumOf { e -> (owned.cheapestPrice(e.name) ?: e.priceUsd ?: 0.0) * e.quantity } }
     Card(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
         Column(Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -244,7 +259,8 @@ private fun BuiltDeckCard(d: BuiltDeck, onSave: () -> Unit) {
                 ColorPips(d.colors)
             }
             Text(
-                if (d.complete) "Playable · ${d.cardCount} cards" else "Incomplete · ${d.cardCount} cards",
+                (if (d.complete) "Playable · ${d.cardCount} cards" else "Incomplete · ${d.cardCount} cards") +
+                    " · ${formatUsd(value)}",
                 color = if (d.complete) Color(0xFF66BB6A) else Color(0xFFFFB74D),
                 style = MaterialTheme.typography.labelMedium
             )
@@ -261,9 +277,15 @@ private fun BuiltDeckCard(d: BuiltDeck, onSave: () -> Unit) {
                     val list = groups[cat] ?: return@forEach
                     SectionHeader("$cat (${list.sumOf { it.quantity }})")
                     list.sortedWith(compareBy({ it.cmc }, { it.name })).forEach { e ->
-                        Row {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("${e.quantity}", Modifier.width(28.dp))
-                            Text(e.name, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                            Column(Modifier.weight(1f)) {
+                                Text(e.name, style = MaterialTheme.typography.bodyMedium)
+                                val sets = owned.printings(e.name)
+                                if (sets.isNotEmpty()) Text(sets.joinToString(", ") { it.label },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                            }
                             Text(compactCost(e.manaCost), style = MaterialTheme.typography.bodySmall)
                         }
                     }

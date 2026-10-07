@@ -1,5 +1,6 @@
 package com.mtgscanbuild.ui
 
+import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -33,10 +34,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.mtgscanbuild.data.formatUsd
 import com.mtgscanbuild.data.legalityMap
+import com.mtgscanbuild.data.totalPrice
+import com.mtgscanbuild.data.unitPrice
 import com.mtgscanbuild.deck.Formats
 import kotlinx.coroutines.launch
 
@@ -47,6 +52,7 @@ fun CardDetailScreen(id: Long, onBack: () -> Unit) {
     val repo = rememberRepo()
     val scope = rememberCoroutineScope()
     val item by remember(id) { repo.observeCard(id) }.collectAsState(initial = null)
+    val uriHandler = LocalUriHandler.current
     var loaded by remember { mutableStateOf(false) }
     var showPrintings by remember { mutableStateOf(false) }
     LaunchedEffect(item) { if (item != null) loaded = true else if (loaded) onBack() }
@@ -79,6 +85,24 @@ fun CardDetailScreen(id: Long, onBack: () -> Unit) {
             OutlinedButton(onClick = { showPrintings = true }, Modifier.fillMaxWidth()) {
                 Text("${c.card.setName} (${c.card.setCode.uppercase()}) #${c.card.collectorNumber} — change")
             }
+            Spacer(Modifier.height(8.dp))
+            SectionHeader("TCGplayer market price")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "${formatUsd(c.unitPrice)} each${if (c.foil) " (foil)" else ""}" +
+                            if (c.quantity > 1) " · ${formatUsd(c.totalPrice)} for ${c.quantity}" else "",
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text("Normal ${formatUsd(c.card.priceUsd)} · Foil ${formatUsd(c.card.priceUsdFoil)}",
+                        style = MaterialTheme.typography.bodySmall)
+                }
+                val url = c.card.tcgplayerUrl
+                    ?: "https://www.tcgplayer.com/search/magic/product?productLineName=magic&q=${Uri.encode(c.card.name)}"
+                OutlinedButton(onClick = { uriHandler.openUri(url) }) { Text("TCGplayer") }
+            }
+            if (c.unitPrice == null) Text("No price yet — use Refresh TCGplayer prices on the Collection tab.",
+                style = MaterialTheme.typography.bodySmall)
             Spacer(Modifier.height(8.dp))
             Text("${c.card.name}  ${compactCost(c.card.manaCost)}", fontWeight = FontWeight.Bold)
             Text(c.card.typeLine, style = MaterialTheme.typography.bodyMedium)

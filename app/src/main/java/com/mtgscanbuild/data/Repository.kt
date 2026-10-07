@@ -13,6 +13,7 @@ class Repository(
     private val db: AppDatabase,
     val api: ScryfallApi,
     val names: CardNameIndex,
+    val moxfield: MoxfieldApi = MoxfieldApi(),
 ) {
     private val cards = db.collection()
     private val decks = db.decks()
@@ -53,7 +54,7 @@ class Repository(
 
     suspend fun clearCollection() = cards.clear()
 
-    /** Re-downloads card data (legalities change with bans) for every card in the collection. */
+    /** Re-downloads card data (legalities change with bans, TCGplayer prices change daily) for every card. */
     suspend fun refreshCardData(progress: (Int, Int) -> Unit): Int {
         val all = cards.getAll()
         var updated = 0
@@ -157,7 +158,25 @@ class Repository(
         val rows = built.entries.map {
             DeckCardEntity(
                 deckId = 0, name = it.name, quantity = it.quantity, section = it.section,
-                typeLine = it.typeLine, manaCost = it.manaCost, cmc = it.cmc, imageUrl = it.imageUrl
+                typeLine = it.typeLine, manaCost = it.manaCost, cmc = it.cmc, imageUrl = it.imageUrl,
+                priceUsd = it.priceUsd
+            )
+        }
+        return decks.saveDeck(entity, rows)
+    }
+
+    /** Saves a Moxfield deck list as one of your decks (cards you don't own are flagged in the deck view). */
+    suspend fun saveMoxfieldDeck(deck: MoxDeck, appFormatId: String): Long {
+        val entity = DeckEntity(
+            name = deck.name, format = appFormatId, colors = deck.colorIdentity,
+            commander = deck.cards.firstOrNull { it.section == "commander" }?.name,
+            description = "Imported from Moxfield" + if (deck.author.isNotEmpty()) " (by ${deck.author})" else "",
+            createdAt = System.currentTimeMillis(), sourceUrl = deck.url
+        )
+        val rows = deck.cards.map {
+            DeckCardEntity(
+                deckId = 0, name = it.name, quantity = it.quantity, section = it.section, typeLine = it.typeLine,
+                manaCost = it.manaCost, cmc = it.cmc, imageUrl = it.imageUrl, priceUsd = it.priceUsd
             )
         }
         return decks.saveDeck(entity, rows)
@@ -172,7 +191,8 @@ class Repository(
         if (existing != null) decks.updateCard(existing.copy(quantity = existing.quantity + 1))
         else decks.insertCards(listOf(DeckCardEntity(
             deckId = deckId, name = card.name, quantity = 1, section = section, typeLine = card.typeLine,
-            manaCost = card.manaCost, cmc = card.cmc, imageUrl = card.imageUrlLarge ?: card.imageUrl
+            manaCost = card.manaCost, cmc = card.cmc, imageUrl = card.imageUrlLarge ?: card.imageUrl,
+            priceUsd = card.priceUsd
         )))
     }
 

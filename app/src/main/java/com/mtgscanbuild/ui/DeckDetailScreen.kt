@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -47,13 +48,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.mtgscanbuild.data.CollectionCard
 import com.mtgscanbuild.data.DeckCardEntity
+import com.mtgscanbuild.data.formatUsd
 import com.mtgscanbuild.data.legalityMap
+import com.mtgscanbuild.deck.DeckCompare
 import com.mtgscanbuild.deck.DeckTools
 import com.mtgscanbuild.deck.Formats
 import kotlinx.coroutines.launch
@@ -77,7 +81,18 @@ fun DeckDetailScreen(id: Long, onBack: () -> Unit) {
     val d = deck
     val format = Formats.byId(d?.format ?: "commander")
     val issues = remember(cards, collection, d) { if (d == null) emptyList() else DeckTools.validate(format, cards, collection) }
-    val owned = remember(collection) { collection.groupBy { it.card.name }.mapValues { e -> e.value.sumOf { it.quantity } } }
+    val index = remember(collection) { DeckCompare.OwnedIndex(collection) }
+    fun unitPrice(c: DeckCardEntity) = index.cheapestPrice(c.name) ?: c.priceUsd
+    val missingByName = remember(cards, index) {
+        cards.groupBy { it.name }.mapValues { (name, rows) ->
+            if (DeckTools.isBasic(name)) 0 else (rows.sumOf { it.quantity } - index.count(name)).coerceAtLeast(0)
+        }
+    }
+    val deckValue = remember(cards, index) { cards.sumOf { (unitPrice(it) ?: 0.0) * it.quantity } }
+    val missingCost = remember(cards, index) {
+        cards.distinctBy { it.name }.sumOf { (unitPrice(it) ?: 0.0) * (missingByName[it.name] ?: 0) }
+    }
+    val uriHandler = LocalUriHandler.current
 
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
@@ -106,6 +121,17 @@ fun DeckDetailScreen(id: Long, onBack: () -> Unit) {
                             val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                             cm.setPrimaryClip(ClipData.newPlainText("deck", DeckTools.exportText(cards)))
                         })
+                        DropdownMenuItem({ Text("Copy missing cards (for TCGplayer Mass Entry)") }, {
+                            menu = false
+                            val text = missingByName.filter { it.value > 0 }.entries.sortedBy { it.key }
+                                .joinToString("\n") { "${it.value} ${it.key}" }
+                            val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            cm.setPrimaryClip(ClipData.newPlainText("missing", text))
+                            Toast.makeText(ctx, if (text.isEmpty()) "You own every card" else "Missing cards copied", Toast.LENGTH_SHORT).show()
+                        })
+                        d?.sourceUrl?.let { url ->
+                            DropdownMenuItem({ Text("Open on Moxfield") }, { menu = false; uriHandler.openUri(url) })
+                        }
                         DropdownMenuItem({ Text("Rename") }, { menu = false; renaming = true })
                         DropdownMenuItem({ Text("Delete deck") }, { menu = false; confirmDelete = true })
                     }
@@ -116,6 +142,13 @@ fun DeckDetailScreen(id: Long, onBack: () -> Unit) {
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
             item {
                 if (d.description.isNotBlank()) Text(d.description, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    "Deck value ${formatUsd(deckValue)}" +
+                        if (missingCost > 0) " · Cost to complete ${formatUsd(missingCost)}" else "",
+                    style = MaterialTheme.typography.labelLarge
+                )
+                Text("TCGplayer market prices", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (issues.isEmpty()) Text("✓ Legal and fully owned", color = Color(0xFF66BB6A), style = MaterialTheme.typography.labelLarge)
                 else issues.take(12).forEach { Text("• $it", color = Color(0xFFFFB74D), style = MaterialTheme.typography.bodySmall) }
                 CurveBar(cards)
@@ -125,14 +158,27 @@ fun DeckDetailScreen(id: Long, onBack: () -> Unit) {
                 val list = groups[cat] ?: return@forEach
                 item(key = "h_$cat") { SectionHeader("$cat (${list.sumOf { it.quantity }})") }
                 items(list, key = { it.id }) { c ->
-                    val have = owned[c.name] ?: 0
+                    val have = index.count(c.name)
                     val short = c.quantity > have && !DeckTools.isBasic(c.name)
+                    val printings = index.printings(c.name)
                     Row(
                         Modifier.fillMaxWidth().clickable { preview = c }.padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(c.name, Modifier.weight(1f), color = if (short) Color(0xFFFFB74D) else Color.Unspecified,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Column(Modifier.weight(1f)) {
+                            Text(c.name, color = if (short) Color(0xFFFFB74D) else Color.Unspecified,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                when {
+                                    printings.isNotEmpty() -> printings.joinToString(", ") { it.label }
+                                    DeckTools.isBasic(c.name) -> "Basic land"
+                                    else -> "Not owned"
+                                } + " · ${formatUsd(unitPrice(c))}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis
+                            )
+                        }
                         Text(compactCost(c.manaCost), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(end = 6.dp))
                         QtyControl(c.quantity) { q -> scope.launch { repo.setDeckCardQuantity(c, q) } }
                     }
@@ -155,7 +201,10 @@ fun DeckDetailScreen(id: Long, onBack: () -> Unit) {
                     val img = c.imageUrl ?: collection.firstOrNull { it.card.name == c.name }?.card?.imageUrlLarge
                     if (img != null) AsyncImage(img, c.name, Modifier.fillMaxWidth().aspectRatio(63f / 88f))
                     Text(c.typeLine, style = MaterialTheme.typography.bodySmall)
-                    Text("You own ${owned[c.name] ?: 0}", style = MaterialTheme.typography.bodySmall)
+                    Text("You own ${index.count(c.name)} · ${formatUsd(unitPrice(c))} each (TCGplayer)", style = MaterialTheme.typography.bodySmall)
+                    index.printings(c.name).forEach { p ->
+                        Text("• ${p.setName} (${p.label})", style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
         )

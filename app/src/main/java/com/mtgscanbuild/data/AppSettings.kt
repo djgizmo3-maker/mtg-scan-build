@@ -52,7 +52,12 @@ class AppSettings(context: Context) {
     var defaultFormat by string("default_format", "commander")
     var assumeBasics by bool("assume_basics", true)
 
+    // Prices (TCGplayer market price via Scryfall)
+    var autoRefreshPrices by bool("auto_refresh_prices", true)
+    var lastPriceRefresh by long("last_price_refresh", 0L)
+
     private fun bool(key: String, def: Boolean) = pref(prefs.getBoolean(key, def)) { putBoolean(key, it) }
+    private fun long(key: String, def: Long) = pref(prefs.getLong(key, def)) { putLong(key, it) }
     private fun float(key: String, def: Float) = pref(prefs.getFloat(key, def)) { putFloat(key, it) }
     private fun string(key: String) = pref<String?>(prefs.getString(key, null)) { putString(key, it) }
     private fun string(key: String, def: String) = pref(prefs.getString(key, def) ?: def) { putString(key, it) }

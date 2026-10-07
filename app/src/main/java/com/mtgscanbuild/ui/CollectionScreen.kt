@@ -4,6 +4,7 @@ import android.app.Application
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -35,6 +36,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -54,16 +56,28 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mtgscanbuild.data.CardData
 import com.mtgscanbuild.data.CollectionCard
+import com.mtgscanbuild.data.formatUsd
 import com.mtgscanbuild.data.frontType
+import com.mtgscanbuild.data.totalPrice
+import com.mtgscanbuild.data.unitPrice
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class CollectionViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = app.repo
+    private val settings = app.settings
     val items = repo.collection.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     var busy by mutableStateOf<String?>(null)
     var message by mutableStateOf<String?>(null)
+
+    init {
+        // TCGplayer prices move daily; refresh them in the background at most once a day.
+        viewModelScope.launch {
+            val stale = System.currentTimeMillis() - settings.lastPriceRefresh > 24 * 60 * 60 * 1000L
+            if (settings.autoRefreshPrices && stale && repo.allCards().isNotEmpty()) refresh(auto = true)
+        }
+    }
 
     fun setQty(c: CollectionCard, q: Int) = viewModelScope.launch { repo.setQuantity(c, q) }
     fun add(card: CardData) = viewModelScope.launch { repo.addCard(card, 1, false); message = "Added ${card.name}" }
@@ -80,51 +94,83 @@ class CollectionViewModel(app: Application) : AndroidViewModel(app) {
         "Imported ${r.imported} cards" + if (r.failed.isNotEmpty())
             ". Not found (${r.failed.size}): " + r.failed.take(10).joinToString(", ") else ""
     }
-    fun refresh() = work("Refreshing card data…") {
-        "Updated ${repo.refreshCardData { d, t -> busy = "Refreshing card data $d / $t…" }} cards (legalities are now current)"
+    fun refresh(auto: Boolean = false) = work(if (auto) "Updating TCGplayer prices…" else "Refreshing card data…") {
+        val n = repo.refreshCardData { d, t -> busy = "${if (auto) "Updating TCGplayer prices" else "Refreshing card data"} $d / $t…" }
+        settings.lastPriceRefresh = System.currentTimeMillis()
+        if (auto) "TCGplayer prices updated for $n cards" else "Updated $n cards (TCGplayer prices and legalities are now current)"
     }
     fun clear() = work("Clearing…") { repo.clearCollection(); "Collection cleared" }
 }
 
-private val sortModes = listOf("Name", "Recently added", "Mana value", "Quantity", "Set")
+private const val SORT_SET = "Set (A–Z)"
+private const val SORT_SET_NEW = "Set (newest first)"
+private val sortModes = listOf("Name", "Recently added", "Mana value", "Quantity", "Value (TCGplayer)", SORT_SET, SORT_SET_NEW)
 private val typeFilters = listOf("All", "Creature", "Instant", "Sorcery", "Artifact", "Enchantment", "Planeswalker", "Land", "Battle")
 
-@OptIn(ExperimentalMaterial3Api::class)
+private data class SetInfo(val code: String, val name: String, val releasedAt: String)
+
+private fun collectorKey(n: String) = n.takeWhile { it.isDigit() }.padStart(6, '0') + n.dropWhile { it.isDigit() }
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun CollectionScreen(onOpen: (Long) -> Unit, vm: CollectionViewModel = viewModel()) {
     val items by vm.items.collectAsStateWithLifecycle()
     var query by remember { mutableStateOf("") }
     var sort by remember { mutableStateOf("Name") }
     var type by remember { mutableStateOf("All") }
+    var setFilter by remember { mutableStateOf<String?>(null) }
     var colorFilter by remember { mutableStateOf(setOf<Char>()) }
     var menu by remember { mutableStateOf(false) }
     var sortMenu by remember { mutableStateOf(false) }
     var typeMenu by remember { mutableStateOf(false) }
+    var setMenu by remember { mutableStateOf(false) }
     var showAdd by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
 
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { it?.let(vm::export) }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { it?.let(vm::import) }
 
-    val filtered = remember(items, query, sort, type, colorFilter) {
+    val sets = remember(items) {
+        items.groupBy { it.card.setCode }.map { (code, list) ->
+            SetInfo(code, list.first().card.setName, list.first().card.releasedAt) to list.sumOf { it.quantity }
+        }.sortedBy { it.first.name }
+    }
+    val totalValue = remember(items) { items.sumOf { it.totalPrice } }
+    val bySet = sort == SORT_SET || sort == SORT_SET_NEW
+    val setRelease = remember(items) {
+        items.groupBy { it.card.setCode }.mapValues { e -> e.value.mapNotNull { it.card.releasedAt.ifEmpty { null } }.minOrNull() ?: "" }
+    }
+
+    val filtered = remember(items, query, sort, type, colorFilter, setFilter) {
         val q = query.trim().lowercase()
         items.asSequence()
             .filter { q.isEmpty() || it.card.name.lowercase().contains(q) || it.card.typeLine.lowercase().contains(q) || it.card.oracleText.lowercase().contains(q) }
             .filter { type == "All" || it.card.frontType.contains(type) }
+            .filter { setFilter == null || it.card.setCode == setFilter }
             .filter { c ->
                 colorFilter.isEmpty() || colorFilter.any { f ->
                     if (f == 'C') c.card.colorIdentity.isEmpty() else f in c.card.colorIdentity
                 }
             }
             .let { s ->
+                val inSet = compareBy<CollectionCard>({ collectorKey(it.card.collectorNumber) }, { it.card.name })
                 when (sort) {
                     "Recently added" -> s.sortedByDescending { it.addedAt }
                     "Mana value" -> s.sortedWith(compareBy({ it.card.cmc }, { it.card.name }))
                     "Quantity" -> s.sortedByDescending { it.quantity }
-                    "Set" -> s.sortedWith(compareBy({ it.card.setCode }, { it.card.collectorNumber.padStart(5, '0') }))
+                    "Value (TCGplayer)" -> s.sortedWith(compareByDescending<CollectionCard> { it.unitPrice ?: -1.0 }.thenBy { it.card.name })
+                    SORT_SET -> s.sortedWith(compareBy<CollectionCard>({ it.card.setName }, { it.card.setCode }).then(inSet))
+                    SORT_SET_NEW -> s.sortedWith(compareByDescending<CollectionCard> { setRelease[it.card.setCode] ?: "" }
+                        .thenBy { it.card.setName }.thenBy { it.card.setCode }.then(inSet))
                     else -> s.sortedBy { it.card.name }
                 }
             }.toList()
+    }
+    val groups = remember(filtered, bySet) {
+        if (!bySet) emptyList() else
+            filtered.groupBy { it.card.setCode }.map { (code, list) ->
+                SetInfo(code, list.first().card.setName, setRelease[code] ?: "") to list
+            }
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -132,7 +178,7 @@ fun CollectionScreen(onOpen: (Long) -> Unit, vm: CollectionViewModel = viewModel
             title = {
                 Column {
                     Text("Collection")
-                    Text("${items.sumOf { it.quantity }.let { "$it card${if (it == 1) "" else "s"}" }} · ${items.map { it.card.name }.distinct().size} unique",
+                    Text("${items.sumOf { it.quantity }.let { "$it card${if (it == 1) "" else "s"}" }} · ${items.map { it.card.name }.distinct().size} unique · ${formatUsd(totalValue)}",
                         style = MaterialTheme.typography.bodySmall)
                 }
             },
@@ -143,7 +189,7 @@ fun CollectionScreen(onOpen: (Long) -> Unit, vm: CollectionViewModel = viewModel
                     DropdownMenu(menu, { menu = false }) {
                         DropdownMenuItem({ Text("Import CSV / list") }, { menu = false; importLauncher.launch(arrayOf("text/*", "application/*")) })
                         DropdownMenuItem({ Text("Export CSV") }, { menu = false; exportLauncher.launch("mtg-collection.csv") })
-                        DropdownMenuItem({ Text("Refresh card data & legality") }, { menu = false; vm.refresh() })
+                        DropdownMenuItem({ Text("Refresh TCGplayer prices & legality") }, { menu = false; vm.refresh() })
                         DropdownMenuItem({ Text("Clear collection") }, { menu = false; confirmClear = true })
                     }
                 }
@@ -184,6 +230,20 @@ fun CollectionScreen(onOpen: (Long) -> Unit, vm: CollectionViewModel = viewModel
                     sortModes.forEach { s -> DropdownMenuItem({ Text(s) }, { sort = s; sortMenu = false }) }
                 }
             }
+            Box {
+                OutlinedButton(onClick = { setMenu = true }) {
+                    Text(setFilter?.let { code -> "Set: ${code.uppercase()}" } ?: "Set: All", maxLines = 1)
+                }
+                DropdownMenu(setMenu, { setMenu = false }) {
+                    DropdownMenuItem({ Text("All sets (${sets.size})") }, { setFilter = null; setMenu = false })
+                    sets.forEach { (info, count) ->
+                        DropdownMenuItem(
+                            { Text("${info.name} (${info.code.uppercase()}) · $count") },
+                            { setFilter = info.code; setMenu = false }
+                        )
+                    }
+                }
+            }
         }
         if (items.isEmpty()) {
             Text(
@@ -192,25 +252,28 @@ fun CollectionScreen(onOpen: (Long) -> Unit, vm: CollectionViewModel = viewModel
             )
         }
         LazyColumn(Modifier.fillMaxSize()) {
-            items(filtered, key = { it.id }) { c ->
-                Row(
-                    Modifier.fillMaxWidth().clickable { onOpen(c.id) }.padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    CardThumb(c.card.imageUrl)
-                    Spacer(Modifier.width(10.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(c.card.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(
-                            "${c.card.setCode.uppercase()} #${c.card.collectorNumber} · ${compactCost(c.card.manaCost)}${if (c.foil) " · FOIL" else ""}",
-                            style = MaterialTheme.typography.bodySmall, maxLines = 1
-                        )
-                        Text(c.card.typeLine, style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (bySet) {
+                groups.forEach { (info, list) ->
+                    stickyHeader(key = "set_${info.code}") {
+                        Surface(color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
+                            Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("${info.name} (${info.code.uppercase()})", fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(
+                                        listOfNotNull(info.releasedAt.takeIf { it.isNotEmpty() }?.take(4),
+                                            "${list.sumOf { it.quantity }} cards").joinToString(" · "),
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                                Text(formatUsd(list.sumOf { it.totalPrice }), style = MaterialTheme.typography.labelLarge)
+                            }
+                        }
                     }
-                    QtyControl(c.quantity, onChange = { vm.setQty(c, it) })
+                    items(list, key = { it.id }) { c -> CollectionRow(c, onOpen, vm) }
                 }
-                HorizontalDivider()
+            } else {
+                items(filtered, key = { it.id }) { c -> CollectionRow(c, onOpen, vm) }
             }
         }
     }
@@ -223,6 +286,32 @@ fun CollectionScreen(onOpen: (Long) -> Unit, vm: CollectionViewModel = viewModel
         confirmButton = { TextButton(onClick = { confirmClear = false; vm.clear() }) { Text("Clear") } },
         dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Cancel") } },
     )
+}
+
+@Composable
+private fun CollectionRow(c: CollectionCard, onOpen: (Long) -> Unit, vm: CollectionViewModel) {
+    Row(
+        Modifier.fillMaxWidth().clickable { onOpen(c.id) }.padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        CardThumb(c.card.imageUrl)
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(c.card.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                "${c.card.setCode.uppercase()} #${c.card.collectorNumber} · ${compactCost(c.card.manaCost)}${if (c.foil) " · FOIL" else ""}",
+                style = MaterialTheme.typography.bodySmall, maxLines = 1
+            )
+            Text(c.card.typeLine, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Column(horizontalAlignment = Alignment.End) {
+            QtyControl(c.quantity, onChange = { vm.setQty(c, it) })
+            Text(formatUsd(c.unitPrice), style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+    HorizontalDivider()
 }
 
 @Composable

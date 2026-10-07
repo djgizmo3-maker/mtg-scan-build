@@ -116,6 +116,8 @@ fun SettingsScreen() {
         SwitchRow("I have plenty of basic lands", s.assumeBasics, "Default for new decks: basics don't need to be in your collection") { s.assumeBasics = it }
 
         Section("Data")
+        SwitchRow("Update TCGplayer prices daily", s.autoRefreshPrices,
+            "Refreshes market prices for your collection once a day when you open it") { s.autoRefreshPrices = it }
         ChoiceRow("Update card name list", "Download the newest names (after a new set releases)") {
             note = "Downloading card names…"
             scope.launch { note = if (repo.names.refresh()) "Card name list updated (${repo.names.size} names)." else "Couldn't download – check your connection." }
