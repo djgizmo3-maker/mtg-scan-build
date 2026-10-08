@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MTG Scan Build - Privacy Policy</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, sans-serif; line-height: 1.65; }
+    body { max-width: 800px; margin: auto; padding: 24px; }
+    h1, h2 { line-height: 1.25; }
+    a { color: light-dark(#155a9b, #9ecbff); overflow-wrap: anywhere; }
+    .notice { border: 2px solid #957341; border-radius: 12px; padding: 16px; }
+    footer { border-top: 1px solid #888; margin-top: 32px; padding-top: 16px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>MTG Scan Build Privacy Policy</h1>
+  <p>Developer: MTG Scan Build<br>Last updated: October 8, 2026<br>
+    Contact: <a href="mailto:sbatyapps@gmail.com">sbatyapps@gmail.com</a></p>
+  <aside class="notice" aria-label="Pre-release notice">
+    <strong>Pre-release policy draft.</strong>
+    Production advertisements and paid Pro checkout are not enabled. Account sign-in,
+    purchase verification, restoration, and account deletion are still being implemented.
+    The sections describing those planned services are not claims that they are available.
+    This policy must be finalized against the completed release before public launch.
+  </aside>
+
+  <h2>1. What the app does</h2>
+  <p>MTG Scan Build is an unofficial Android tool for scanning Magic: The Gathering cards,
+    managing collections and decks, and viewing news, legality information, and rule references.
+    It is not affiliated with Wizards of the Coast.</p>
+
+  <h2>2. Your collection and device settings</h2>
+  <p>Collection entries, quantities, folder names and colors, saved decks, and app settings
+    are stored on your device. The app does not currently upload your collection to a
+    developer-operated cloud database. Android backup may include app data depending on
+    your device settings and backup provider.</p>
+  <p>CSV import and export operate on files you choose. Exports and deck lists are shared
+    only when you choose a destination or another app. Once shared, those files are handled
+    by that destination's privacy practices.</p>
+
+  <h2>3. Camera, photos, and sound files</h2>
+  <p>Camera access is used for card recognition. The app uses Google ML Kit for on-device
+    text recognition and does not upload camera frames or selected photos to the developer.
+    Recognized card names and, when available, set codes and collector numbers are sent
+    to Scryfall to retrieve card information. ML Kit and Google services may download
+    components and process technical SDK information under Google's policies.</p>
+  <p>The app accesses photos or custom scan sounds that you select through Android's file
+    picker. Camera permission can be revoked in Android settings. No microphone, contacts,
+    or precise-location permission is requested by the app.</p>
+
+  <h2>4. Online card data, news, and external links</h2>
+  <p>Requests to Scryfall can include card names, printing identifiers, format filters, and
+    search terms. Moxfield requests can include searches, format choices, and deck IDs or
+    links you enter. News requests go to Wizards of the Coast. Network providers receive
+    your IP address and ordinary request metadata. Tapping articles, rules, store links,
+    or other external links opens services governed by their own policies.</p>
+  <p>Card pictures and card-name information may be cached locally. You can clear the image
+    cache from Settings. The app does not sell your collection data.</p>
+
+  <h2>5. Advertising and privacy choices</h2>
+  <p>Basic is intended to show small Google AdMob banners on non-Scan pages. The private
+    developer build excludes the advertising SDK. Paid Pro is intended to remove banners
+    once its verified purchase system is available.</p>
+  <p>During development, the public debug build uses Google test advertisements.
+    Production advertising is currently disabled. Google Mobile Ads and the User Messaging
+    Platform are included in the public build. When enabled and permitted, these services
+    may process IP addresses, device and advertising identifiers, approximate location
+    derived from an IP address, ad interactions, and diagnostic information. Non-personalized
+    advertisements do not mean no data is processed.</p>
+  <p>The app stores only an age category locally, not a birth date. No advertisements are
+    requested for an unknown category or an under-13 selection. Ages 13-17 receive
+    under-age-of-consent treatment; all ad requests are configured as non-personalized with
+    a PG maximum content rating. The intended audience is ages 13 and older.</p>
+  <p>Ad requests wait for a successful Google privacy-information update and the SDK's
+    permission to request ads. Where required, Google presents a privacy form. A
+    <strong>Manage ad privacy choices</strong> option appears in Settings when the SDK
+    requires it. Age category and connection retry controls are also in Settings.</p>
+
+  <h2>6. Firebase accounts and paid Pro - planned</h2>
+  <p>The public build is configured for Firebase Authentication, Firestore, and Cloud
+    Functions. Google sign-in is configured in Firebase, but there is no account sign-in
+    flow in the app yet. The initial Firestore rules deny client access. Google Analytics
+    is not included in this integration.</p>
+  <p>The planned account system will use a Firebase user ID and Google account information,
+    such as an email address and display name, to identify the account. The planned backend
+    will verify Google Play purchase tokens and store account-linked purchase and Pro
+    entitlement records for restoration and fraud prevention. We do not receive your full
+    payment-card details; Google Play processes payment.</p>
+  <p>Before enabling accounts and purchases, we will finalize account-deletion controls,
+    the external deletion-request page, retention periods, purchase-record treatment, and
+    the Play Data safety declarations. These are outstanding release requirements.</p>
+
+  <h2>7. Deletion and retention in the current build</h2>
+  <p>You can remove collection entries, folders, and decks through the app. Removing a
+    folder leaves its cards in the collection. Clearing app storage or uninstalling removes
+    local app data; exported files and Android/cloud backups may remain separately.
+    Manage those copies through their file or backup provider.</p>
+  <p>Technical data handled by Google and other providers is subject to their retention
+    practices. This app does not yet operate a live account/purchase-record backend.
+    For privacy questions, contact
+    <a href="mailto:sbatyapps@gmail.com">sbatyapps@gmail.com</a>. Do not send passwords,
+    payment details, or service-account keys.</p>
+
+  <h2>8. Service-provider information</h2>
+  <ul>
+    <li><a href="https://policies.google.com/privacy">Google Privacy Policy</a></li>
+    <li><a href="https://firebase.google.com/support/privacy">Firebase privacy and security</a></li>
+    <li><a href="https://developers.google.com/admob/android/privacy/play-data-disclosure">Google Mobile Ads data disclosures</a></li>
+    <li><a href="https://scryfall.com/docs/privacy">Scryfall Privacy Policy</a></li>
+    <li><a href="https://moxfield.com/privacy">Moxfield Privacy Policy</a></li>
+    <li><a href="https://company.wizards.com/en/legal/wizards-coasts-privacy-policy">Wizards of the Coast Privacy Policy</a></li>
+    <li><a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub Privacy Statement</a> (this policy's hosting provider)</li>
+  </ul>
+  <p>This page has no advertising, analytics scripts, or contact form. Its hosting provider
+    may process connection metadata and access logs.</p>
+
+  <h2>9. Changes</h2>
+  <p>We will update this page when the app's data practices change and revise the date above.
+    Material release changes will also be described in release notes or the app as appropriate.</p>
+</main>
+<footer>MTG Scan Build &middot; Unofficial Magic: The Gathering companion app</footer>
+</body>
+</html>
