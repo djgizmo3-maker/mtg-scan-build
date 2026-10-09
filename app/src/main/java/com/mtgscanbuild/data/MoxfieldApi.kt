@@ -54,7 +54,7 @@ data class MoxDeck(
  * Client for Moxfield's public (unofficial, undocumented) deck API. Moxfield rate-limits hard,
  * so requests are spaced out and HTTP 429 responses are retried with back-off.
  */
-class MoxfieldApi {
+class MoxfieldApi(private val access: PlanAccess = PlanAccess()) {
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
@@ -97,6 +97,7 @@ class MoxfieldApi {
 
     /** Public decks for a format, most viewed first. [filter] matches deck names / cards on Moxfield. */
     suspend fun search(appFormatId: String, filter: String = "", page: Int = 1, pageSize: Int = 20): List<MoxDeckSummary> {
+        access.requirePro(ProFeature.MOXFIELD)
         val fmt = formatFor(appFormatId)
         var url = "$BASE/v2/decks/search?pageNumber=$page&pageSize=$pageSize&sortType=views&sortDirection=Descending&fmt=${enc(fmt)}"
         if (filter.isNotBlank()) url += "&filter=${enc(filter.trim())}"
@@ -106,6 +107,7 @@ class MoxfieldApi {
 
     /** Full deck list. Accepts a Moxfield deck URL or its public id. */
     suspend fun deck(urlOrId: String): MoxDeck? {
+        access.requirePro(ProFeature.MOXFIELD)
         val id = extractId(urlOrId) ?: return null
         return request("$BASE/v3/decks/all/${enc(id)}")?.let(::parseDeck)
     }

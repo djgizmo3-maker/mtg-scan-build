@@ -6,6 +6,7 @@ import androidx.room.Database
 import androidx.room.Delete
 import androidx.room.Embedded
 import androidx.room.Entity
+import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.Insert
 import androidx.room.PrimaryKey
@@ -71,7 +72,9 @@ val CardData.frontType: String get() = typeLine.substringBefore(" // ")
 
 @Entity(
     tableName = "collection",
-    indices = [Index(value = ["scryfallId", "foil"], unique = true), Index("name")]
+    indices = [Index(value = ["scryfallId", "foil"], unique = true), Index("name"), Index("folderId")],
+    foreignKeys = [ForeignKey(entity = CollectionFolder::class, parentColumns = ["id"],
+        childColumns = ["folderId"], onDelete = ForeignKey.SET_NULL)]
 )
 data class CollectionCard(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -79,7 +82,41 @@ data class CollectionCard(
     val quantity: Int,
     val foil: Boolean,
     val addedAt: Long,
+    val folderId: Long? = null,
 )
+
+@Entity(tableName = "collection_folders")
+data class CollectionFolder(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val color: Int,
+)
+
+data class FolderSummary(val quantity: Int, val estimatedValue: Double, val unpricedQuantity: Int)
+
+fun folderSummary(cards: List<CollectionCard>, folderId: Long?): FolderSummary {
+    val contents = cards.filter { it.folderId == folderId }
+    return FolderSummary(contents.sumOf { it.quantity }, contents.sumOf { it.totalPrice },
+        contents.filter { it.unitPrice == null }.sumOf { it.quantity })
+}
+
+@Dao
+interface CollectionFolderDao {
+    @Query("SELECT COUNT(*) FROM collection_folders")
+    suspend fun count(): Int
+
+    @Query("SELECT * FROM collection_folders ORDER BY name COLLATE NOCASE, id")
+    fun observeAll(): Flow<List<CollectionFolder>>
+
+    @Insert
+    suspend fun insert(folder: CollectionFolder): Long
+
+    @Update
+    suspend fun update(folder: CollectionFolder)
+
+    @Query("DELETE FROM collection_folders WHERE id = :id")
+    suspend fun delete(id: Long)
+}
 
 @Entity(tableName = "decks")
 data class DeckEntity(
@@ -117,6 +154,15 @@ interface CollectionDao {
 
     @Query("SELECT * FROM collection")
     suspend fun getAll(): List<CollectionCard>
+
+    @Query("SELECT * FROM collection WHERE id = :id")
+    suspend fun get(id: Long): CollectionCard?
+
+    @Query("UPDATE collection SET folderId = :folderId WHERE id IN (:ids)")
+    suspend fun assignFolder(ids: List<Long>, folderId: Long?)
+
+    @Query("UPDATE collection SET quantity = :quantity WHERE id = :id")
+    suspend fun setQuantity(id: Long, quantity: Int)
 
     @Query("SELECT * FROM collection WHERE id = :id")
     fun observe(id: Long): Flow<CollectionCard?>
@@ -187,13 +233,14 @@ interface DeckDao {
 }
 
 @Database(
-    entities = [CollectionCard::class, DeckEntity::class, DeckCardEntity::class],
-    version = 2,
+    entities = [CollectionCard::class, DeckEntity::class, DeckCardEntity::class, CollectionFolder::class],
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun collection(): CollectionDao
     abstract fun decks(): DeckDao
+    abstract fun folders(): CollectionFolderDao
 
     companion object {
         /** v2: TCGplayer prices, release dates and deck source links. */
@@ -208,7 +255,16 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS collection_folders (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, name TEXT NOT NULL, color INTEGER NOT NULL)")
+                db.execSQL("ALTER TABLE collection ADD COLUMN folderId INTEGER REFERENCES collection_folders(id) ON DELETE SET NULL")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_collection_folderId ON collection(folderId)")
+            }
+        }
+
         fun create(context: Context): AppDatabase =
-            Room.databaseBuilder(context, AppDatabase::class.java, "mtg.db").addMigrations(MIGRATION_1_2).build()
+            Room.databaseBuilder(context, AppDatabase::class.java, "mtg.db")
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
     }
 }

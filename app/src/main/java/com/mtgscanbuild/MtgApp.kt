@@ -10,9 +10,14 @@ import com.mtgscanbuild.scan.ScanSounds
 import com.mtgscanbuild.data.CardNameIndex
 import com.mtgscanbuild.data.Repository
 import com.mtgscanbuild.data.ScryfallApi
+import com.mtgscanbuild.data.PlanAccess
+import com.mtgscanbuild.data.ProEntitlements
 import okhttp3.OkHttpClient
 
 class MtgApp : Application(), ImageLoaderFactory {
+    val access = PlanAccess()
+    lateinit var entitlements: ProEntitlements
+        private set
     lateinit var repo: Repository
         private set
     lateinit var settings: AppSettings
@@ -22,9 +27,11 @@ class MtgApp : Application(), ImageLoaderFactory {
 
     override fun onCreate() {
         super.onCreate()
+        initializeBackendProtection()
+        entitlements = createProEntitlements(this, access)
         val api = ScryfallApi()
-        repo = Repository(this, AppDatabase.create(this), api, CardNameIndex(filesDir, api))
-        settings = AppSettings(this)
+        repo = Repository(this, AppDatabase.create(this), api, CardNameIndex(filesDir, api), access = access)
+        settings = AppSettings(this, access)
         sounds = ScanSounds(this, settings)
     }
 

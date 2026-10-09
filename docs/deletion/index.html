@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MTG Scan Build - Account Deletion</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, sans-serif; line-height: 1.65; }
+    body { max-width: 800px; margin: auto; padding: 24px; }
+    h1, h2 { line-height: 1.25; }
+    a { color: light-dark(#155a9b, #9ecbff); overflow-wrap: anywhere; }
+    .notice { border: 2px solid #957341; border-radius: 12px; padding: 16px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Delete your MTG Scan Build account</h1>
+  <p>Developer: MTG Scan Build<br>
+    Contact: <a href="mailto:sbatyapps@gmail.com">sbatyapps@gmail.com</a></p>
+  <aside class="notice" aria-label="Pre-release notice">
+    <strong>Pre-release instructions.</strong> The account-deletion backend has been
+    deployed for release testing, but the updated account-enabled app has not been released through Google Play.
+    The workflow below must be tested before launch. You may contact support now with
+    questions or a request; this page does not claim that the release workflow has been validated.
+  </aside>
+
+  <h2>Request deletion without installing the app</h2>
+  <p>Email <a href="mailto:sbatyapps@gmail.com?subject=MTG%20Scan%20Build%20account%20deletion">sbatyapps@gmail.com</a>
+    with the subject <strong>MTG Scan Build account deletion</strong>. State that you want
+    your MTG Scan Build account deleted and provide the email address of the Google account
+    you used to sign in. You do not need to reinstall the app.</p>
+  <p>We will verify account ownership before deleting an account. Providing an email
+    address alone is not proof of ownership: support will require a confirmation through
+    the registered address and match the request to the app account. We will contact you
+    if further verification is needed and confirm completion once deletion finishes.</p>
+  <p><strong>Do not send passwords, sign-in codes, identity documents, payment-card details,
+    or purchase tokens.</strong> A deletion request cannot transfer a purchase to someone
+    else's Google account.</p>
+
+  <h2>In the account-enabled app</h2>
+  <p>Open the Pro comparison page, select <strong>Delete app account</strong>, read the
+    confirmation, and confirm your identity using the same Google account. An internet
+    connection is required. Cancellation of identity confirmation does not request deletion.
+    If a network error interrupts the request, server cleanup may still complete; check the
+    status before retrying or contact support.</p>
+
+  <h2>What is deleted and what stays</h2>
+  <ul>
+    <li>Your Firebase app account and its account profile are deleted, including its
+      stored email address and display name. Account-linked Pro verification records
+      are removed or detached as described below.</li>
+    <li>In-app deletion signs you out and clears the device's cached Pro access.
+      A remote support request cannot erase storage on your device; sign out or clear
+      app storage locally to remove local sign-in/cache data.</li>
+    <li>Your local cards, folders, saved decks, and settings are kept. The developer
+      does not receive or delete this on-device collection. Use the app's deletion
+      controls or Android's clear-storage control to remove it. Exported files and
+      backups must be removed from their own storage providers.</li>
+    <li>For purchase recovery and fraud prevention, we retain a hashed Google-account
+      identifier, purchase token, and verification status while the permanent Pro
+      purchase remains valid. These records do not include your email, display name,
+      or collection. Canceled or revoked retained purchases are removed after server
+      verification; service failures may delay that check.</li>
+    <li>A temporary deletion marker contains the Firebase account ID while cleanup
+      is pending. After completion, it contains only a hash of that ID and the completion
+      time. The hourly cleanup removes completed markers after 24 hours; service
+      interruptions may delay removal.</li>
+    <li>Support correspondence remains in the support mailbox until the request is
+      resolved, then is deleted from the developer's mailbox. Email-provider backups,
+      service logs, and Google Play transaction records are governed by the respective
+      provider's retention practices.</li>
+  </ul>
+  <p>Deleting the app account does <strong>not</strong> delete your Google account or
+    automatically refund a Google Play purchase. A valid permanent Pro purchase can be
+    recovered by signing in again with the same Google account and restoring the purchase,
+    after Google Play verifies it.</p>
+  <p><a href="../privacy/">Read the privacy policy</a></p>
+</main>
+</body>
+</html>

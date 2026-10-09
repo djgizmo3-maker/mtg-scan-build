@@ -9,6 +9,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
@@ -66,6 +67,36 @@ class ScryfallApi {
         return j.optJSONArray("data").strings()
     }
 
+    suspend fun bannedAndRestricted(formatId: String): BanLists {
+        require(HomeModes.withBanLists.any { it.legalityId == formatId }) { "Unsupported format: $formatId" }
+        return loadBanLists(formatId) { request(it) }
+    }
+
+    internal suspend fun loadBanLists(formatId: String, fetch: suspend (String) -> JSONObject?): BanLists {
+        val cards = mutableListOf<LegalityCard>()
+        var url: String? = "$BASE/cards/search?q=${enc("(banned:$formatId or restricted:$formatId)")}&unique=cards&order=name"
+        val visited = mutableSetOf<String>()
+        while (url != null) {
+            val current = url
+            val parsed = current.toHttpUrlOrNull()
+            check(parsed?.scheme == "https" && parsed.host == "api.scryfall.com" && parsed.encodedPath == "/cards/search") {
+                "Scryfall returned an invalid pagination URL"
+            }
+            check(visited.add(current)) { "Scryfall repeated a search page" }
+            val page = fetch(current)
+            if (page == null) {
+                if (visited.size == 1) return BanLists(emptyList(), emptyList())
+                throw IOException("Scryfall search ended before all pages were loaded")
+            }
+            cards += parseLegalityPage(page, formatId)
+            url = if (page.getBoolean("has_more")) page.getString("next_page").also {
+                if (it.isBlank()) throw IOException("Scryfall omitted the next search page")
+            } else null
+        }
+        val distinct = cards.distinctBy { it.id }.sortedBy { it.name }
+        return BanLists(distinct.filter { it.status == "banned" }, distinct.filter { it.status == "restricted" })
+    }
+
     /** All paper printings of a card, newest first. */
     suspend fun prints(name: String): List<CardData> {
         val out = mutableListOf<CardData>()
@@ -109,6 +140,17 @@ class ScryfallApi {
 
     companion object {
         const val BASE = "https://api.scryfall.com"
+
+        fun parseLegalityPage(page: JSONObject, formatId: String): List<LegalityCard> {
+            val data = page.getJSONArray("data")
+            return (0 until data.length()).mapNotNull { index ->
+                val card = data.getJSONObject(index)
+                val status = card.getJSONObject("legalities").getString(formatId)
+                if (status != "banned" && status != "restricted") null else
+                    LegalityCard(card.getString("id"), card.getString("name"),
+                        card.getString("scryfall_uri"), status)
+            }
+        }
 
         private fun JSONArray?.strings(): List<String> {
             if (this == null) return emptyList()

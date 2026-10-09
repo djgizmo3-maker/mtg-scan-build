@@ -34,6 +34,7 @@ import com.mtgscanbuild.R
 import com.mtgscanbuild.data.Accent
 import com.mtgscanbuild.data.AppSettings
 import com.mtgscanbuild.data.Repository
+import com.mtgscanbuild.data.PlanAccess
 import com.mtgscanbuild.data.ThemeMode
 import com.mtgscanbuild.scan.ScanSounds
 
@@ -93,6 +94,7 @@ fun AppTheme(content: @Composable () -> Unit) {
 }
 
 val Application.repo: Repository get() = (this as MtgApp).repo
+val Application.access: PlanAccess get() = (this as MtgApp).access
 val Application.settings: AppSettings get() = (this as MtgApp).settings
 val Application.sounds: ScanSounds get() = (this as MtgApp).sounds
 

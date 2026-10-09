@@ -8,14 +8,20 @@ import kotlin.reflect.KProperty
 
 enum class ThemeMode(val label: String) { SYSTEM("Follow phone"), DARK("Dark"), LIGHT("Light") }
 
-enum class Accent(val label: String, val dark: Long, val light: Long) {
-    ARCANE("Arcane purple", 0xFFB39DDB, 0xFF6A4FA3),
-    ISLAND("Island blue", 0xFF6EB3E8, 0xFF1F5F99),
-    FOREST("Forest green", 0xFF7BC896, 0xFF2E7D4F),
-    MOUNTAIN("Mountain red", 0xFFEF8A72, 0xFFB23A26),
-    PLAINS("Plains gold", 0xFFF2CF6B, 0xFF8A6A00),
-    SWAMP("Swamp gray", 0xFFB8ADB4, 0xFF5B4E57),
-    DYNAMIC("Phone wallpaper (Android 12+)", 0xFFB39DDB, 0xFF6A4FA3),
+enum class AdAudience(val label: String) {
+    UNSET("Not selected"), UNDER_13("Under 13"), TEEN("13-17"), ADULT("18 or older"),
+}
+
+enum class ManaLand { PLAINS, ISLAND, SWAMP, MOUNTAIN, FOREST, WASTES }
+
+enum class Accent(val label: String, val dark: Long, val light: Long, val land: ManaLand) {
+    ARCANE("Colorless - Wastes", 0xFFC0BEC9, 0xFF625F72, ManaLand.WASTES),
+    ISLAND("Blue mana - Island", 0xFF6EB3E8, 0xFF1F5F99, ManaLand.ISLAND),
+    FOREST("Green mana - Forest", 0xFF7BC896, 0xFF2E7D4F, ManaLand.FOREST),
+    MOUNTAIN("Red mana - Mountain", 0xFFEF8A72, 0xFFB23A26, ManaLand.MOUNTAIN),
+    PLAINS("White mana - Plains", 0xFFF2CF6B, 0xFF8A6A00, ManaLand.PLAINS),
+    SWAMP("Black mana - Swamp", 0xFFB8ADB4, 0xFF5B4E57, ManaLand.SWAMP),
+    DYNAMIC("Phone colors - Wastes (Android 12+)", 0xFFC0BEC9, 0xFF625F72, ManaLand.WASTES),
 }
 
 /** How many consecutive camera frames must agree before a card counts as recognized. */
@@ -26,7 +32,7 @@ enum class ScanSensitivity(val label: String, val confidentFrames: Int, val fuzz
 }
 
 /** User preferences, persisted in SharedPreferences and observable from Compose. */
-class AppSettings(context: Context) {
+class AppSettings(context: Context, private val access: PlanAccess = PlanAccess()) {
     private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
     // Scanning
@@ -47,6 +53,14 @@ class AppSettings(context: Context) {
     var themeMode by enumPref("theme", ThemeMode.DARK)
     var accent by enumPref("accent", Accent.ARCANE)
     var showImages by bool("show_images", true)
+    var adAudience by enumPref("ad_audience", AdAudience.UNSET)
+    private var savedStartPage by enumPref("start_page", StartPage.HOME)
+    var startPage: StartPage
+        get() = access.openingPage(savedStartPage)
+        set(value) {
+            access.requirePro(ProFeature.START_PAGE)
+            savedStartPage = value
+        }
 
     // Deck building
     var defaultFormat by string("default_format", "commander")

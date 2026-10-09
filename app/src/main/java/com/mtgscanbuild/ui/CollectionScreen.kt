@@ -2,6 +2,7 @@ package com.mtgscanbuild.ui
 
 import android.app.Application
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -45,6 +46,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -56,6 +58,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mtgscanbuild.data.CardData
 import com.mtgscanbuild.data.CollectionCard
+import com.mtgscanbuild.data.CollectionFolder
 import com.mtgscanbuild.data.formatUsd
 import com.mtgscanbuild.data.frontType
 import com.mtgscanbuild.data.totalPrice
@@ -63,11 +66,13 @@ import com.mtgscanbuild.data.unitPrice
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 
 class CollectionViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = app.repo
     private val settings = app.settings
     val items = repo.collection.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val folders = repo.collectionFolders.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     var busy by mutableStateOf<String?>(null)
     var message by mutableStateOf<String?>(null)
 
@@ -84,8 +89,15 @@ class CollectionViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun work(label: String, block: suspend () -> String) = viewModelScope.launch {
         busy = label
-        message = try { block() } catch (e: Exception) { "Failed: ${e.message}" }
-        busy = null
+        try {
+            message = block()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            message = "Failed: ${e.message}"
+        } finally {
+            busy = null
+        }
     }
 
     fun export(uri: Uri) = work("Exporting…") { "Exported ${repo.exportCsv(uri)} entries" }
@@ -100,6 +112,15 @@ class CollectionViewModel(app: Application) : AndroidViewModel(app) {
         if (auto) "TCGplayer prices updated for $n cards" else "Updated $n cards (TCGplayer prices and legalities are now current)"
     }
     fun clear() = work("Clearing…") { repo.clearCollection(); "Collection cleared" }
+    fun saveFolder(folder: CollectionFolder) = work("Saving folder...") {
+        repo.saveFolder(folder); "Saved ${folder.name.trim()}"
+    }
+    fun deleteFolder(folder: CollectionFolder) = work("Deleting folder...") {
+        repo.deleteFolder(folder.id); "Deleted ${folder.name}; its cards are now unfiled"
+    }
+    fun assignFolder(ids: List<Long>, folderId: Long?) = work("Moving cards...") {
+        repo.assignFolder(ids, folderId); "Moved ${ids.size} card entries"
+    }
 }
 
 private const val SORT_SET = "Set (A–Z)"
@@ -113,8 +134,18 @@ private fun collectorKey(n: String) = n.takeWhile { it.isDigit() }.padStart(6, '
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun CollectionScreen(onOpen: (Long) -> Unit, vm: CollectionViewModel = viewModel()) {
+fun CollectionScreen(onOpen: (Long) -> Unit, onPro: () -> Unit, vm: CollectionViewModel = viewModel()) {
+    val access = rememberRepo().access
     val items by vm.items.collectAsStateWithLifecycle()
+    val folders by vm.folders.collectAsStateWithLifecycle()
+    var userSets by rememberSaveable { mutableStateOf(false) }
+    var folderView by rememberSaveable { mutableStateOf(true) }
+    var selectedFolder by rememberSaveable { mutableStateOf<Long?>(null) }
+    var showFolderCards by remember { mutableStateOf(false) }
+    val activeFolder = selectedFolder?.let { id -> folders.find { it.id == id } }
+    val inFolder = userSets && folderView && (selectedFolder == 0L || activeFolder != null)
+    val sourceItems = if (inFolder) items.filter { it.folderId == activeFolder?.id } else items
+    BackHandler(enabled = inFolder) { selectedFolder = null }
     var query by remember { mutableStateOf("") }
     var sort by remember { mutableStateOf("Name") }
     var type by remember { mutableStateOf("All") }
@@ -141,9 +172,9 @@ fun CollectionScreen(onOpen: (Long) -> Unit, vm: CollectionViewModel = viewModel
         items.groupBy { it.card.setCode }.mapValues { e -> e.value.mapNotNull { it.card.releasedAt.ifEmpty { null } }.minOrNull() ?: "" }
     }
 
-    val filtered = remember(items, query, sort, type, colorFilter, setFilter) {
+    val filtered = remember(sourceItems, query, sort, type, colorFilter, setFilter) {
         val q = query.trim().lowercase()
-        items.asSequence()
+        sourceItems.asSequence()
             .filter { q.isEmpty() || it.card.name.lowercase().contains(q) || it.card.typeLine.lowercase().contains(q) || it.card.oracleText.lowercase().contains(q) }
             .filter { type == "All" || it.card.frontType.contains(type) }
             .filter { setFilter == null || it.card.setCode == setFilter }
@@ -177,7 +208,7 @@ fun CollectionScreen(onOpen: (Long) -> Unit, vm: CollectionViewModel = viewModel
         TopAppBar(
             title = {
                 Column {
-                    Text("Collection")
+                    Text(if (inFolder) activeFolder?.name ?: "Unfiled" else "Collection")
                     Text("${items.sumOf { it.quantity }.let { "$it card${if (it == 1) "" else "s"}" }} · ${items.map { it.card.name }.distinct().size} unique · ${formatUsd(totalValue)}",
                         style = MaterialTheme.typography.bodySmall)
                 }
@@ -187,8 +218,14 @@ fun CollectionScreen(onOpen: (Long) -> Unit, vm: CollectionViewModel = viewModel
                 Box {
                     IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "More") }
                     DropdownMenu(menu, { menu = false }) {
-                        DropdownMenuItem({ Text("Import CSV / list") }, { menu = false; importLauncher.launch(arrayOf("text/*", "application/*")) })
-                        DropdownMenuItem({ Text("Export CSV") }, { menu = false; exportLauncher.launch("mtg-collection.csv") })
+                        DropdownMenuItem({ Text("Import CSV / list${if (access.hasPro) "" else " (Pro)"}") }, {
+                            menu = false
+                            if (access.hasPro) importLauncher.launch(arrayOf("text/*", "application/*")) else onPro()
+                        })
+                        DropdownMenuItem({ Text("Export CSV${if (access.hasPro) "" else " (Pro)"}") }, {
+                            menu = false
+                            if (access.hasPro) exportLauncher.launch("mtg-collection.csv") else onPro()
+                        })
                         DropdownMenuItem({ Text("Refresh TCGplayer prices & legality") }, { menu = false; vm.refresh() })
                         DropdownMenuItem({ Text("Clear collection") }, { menu = false; confirmClear = true })
                     }
@@ -203,6 +240,29 @@ fun CollectionScreen(onOpen: (Long) -> Unit, vm: CollectionViewModel = viewModel
             Row(Modifier.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(it, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                 TextButton(onClick = { vm.message = null }) { Text("OK") }
+            }
+        }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(!userSets, { userSets = false }, label = { Text("Collection") })
+            FilterChip(userSets, { userSets = true }, label = { Text("User Created Sets") })
+        }
+        if (userSets) {
+            Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(!folderView, { folderView = false }, label = { Text("Full list") })
+                FilterChip(folderView, { folderView = true }, label = { Text("Folders") })
+            }
+            if (folderView && !inFolder) {
+                FolderBrowser(items, folders, onOpen = { selectedFolder = it },
+                    onSave = vm::saveFolder, onDelete = vm::deleteFolder,
+                    onAll = { folderView = false }, canCreate = access.canCreateFolder(folders.size), onPro = onPro)
+                return@Column
+            }
+            if (inFolder) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = { selectedFolder = null }) { Text("Back to folders") }
+                    Text(formatUsd(sourceItems.sumOf { it.totalPrice }), Modifier.weight(1f))
+                    if (activeFolder != null) TextButton(onClick = { showFolderCards = true }) { Text("Add cards") }
+                }
             }
         }
         OutlinedTextField(
@@ -245,11 +305,14 @@ fun CollectionScreen(onOpen: (Long) -> Unit, vm: CollectionViewModel = viewModel
                 }
             }
         }
-        if (items.isEmpty()) {
+        if (sourceItems.isEmpty()) {
             Text(
-                "Your collection is empty. Scan cards on the Scan tab, add them by name with +, or import a CSV.",
+                if (inFolder) "No cards in this folder. Move existing cards here with Add cards or from a card's details."
+                else "Your collection is empty. Scan cards on the Scan tab, add them by name with +, or import a CSV.",
                 Modifier.padding(24.dp)
             )
+        } else if (filtered.isEmpty()) {
+            Text("No cards match your filters.", Modifier.padding(24.dp))
         }
         LazyColumn(Modifier.fillMaxSize()) {
             if (bySet) {
@@ -279,10 +342,16 @@ fun CollectionScreen(onOpen: (Long) -> Unit, vm: CollectionViewModel = viewModel
     }
 
     if (showAdd) SearchCardDialog(onPicked = { vm.add(it); showAdd = false }, onDismiss = { showAdd = false })
+    if (showFolderCards && activeFolder != null) FolderCardsDialog(
+        items, folders, activeFolder,
+        onMove = { ids -> vm.assignFolder(ids, activeFolder.id); showFolderCards = false },
+        onDismiss = { showFolderCards = false }
+    )
     if (confirmClear) AlertDialog(
         onDismissRequest = { confirmClear = false },
         title = { Text("Clear collection?") },
-        text = { Text("This removes every card from your inventory. Export a CSV first if you want a backup.") },
+        text = { Text("This removes every card from your inventory and cannot be undone. " +
+            if (access.hasPro) "Export a CSV first if you want a backup." else "No CSV backup is available on Basic.") },
         confirmButton = { TextButton(onClick = { confirmClear = false; vm.clear() }) { Text("Clear") } },
         dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Cancel") } },
     )

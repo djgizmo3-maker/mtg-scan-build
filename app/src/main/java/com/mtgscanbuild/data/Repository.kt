@@ -2,7 +2,12 @@ package com.mtgscanbuild.data
 
 import android.content.Context
 import android.net.Uri
+import androidx.room.withTransaction
 import com.mtgscanbuild.deck.BuiltDeck
+import com.mtgscanbuild.deck.BuildOptions
+import com.mtgscanbuild.deck.DeckBuilder
+import com.mtgscanbuild.deck.Format
+import com.mtgscanbuild.deck.Formats
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
@@ -13,16 +18,30 @@ class Repository(
     private val db: AppDatabase,
     val api: ScryfallApi,
     val names: CardNameIndex,
-    val moxfield: MoxfieldApi = MoxfieldApi(),
+    val access: PlanAccess = PlanAccess(),
+    val moxfield: MoxfieldApi = MoxfieldApi(access),
 ) {
     private val cards = db.collection()
     private val decks = db.decks()
+    private val folders = db.folders()
 
     val collection: Flow<List<CollectionCard>> = cards.observeAll()
+    val collectionFolders = folders.observeAll()
+    suspend fun saveFolder(folder: CollectionFolder) = db.withTransaction {
+        require(folder.name.isNotBlank()) { "Enter a folder name" }
+        val normalized = folder.copy(name = folder.name.trim())
+        if (folder.id == 0L) {
+            access.requireNewFolder(folders.count())
+            folders.insert(normalized)
+        } else folders.update(normalized)
+        Unit
+    }
+    suspend fun deleteFolder(id: Long) = folders.delete(id)
+    suspend fun assignFolder(ids: List<Long>, folderId: Long?) = cards.assignFolder(ids, folderId)
     fun observeCard(id: Long) = cards.observe(id)
     suspend fun allCards() = cards.getAll()
 
-    suspend fun addCard(card: CardData, qty: Int, foil: Boolean) {
+    suspend fun addCard(card: CardData, qty: Int, foil: Boolean): Unit = db.withTransaction {
         val existing = cards.find(card.scryfallId, foil)
         if (existing != null) cards.update(existing.copy(quantity = existing.quantity + qty, card = card))
         else cards.insert(CollectionCard(card = card, quantity = qty, foil = foil, addedAt = System.currentTimeMillis()))
@@ -35,7 +54,7 @@ class Repository(
     }
 
     suspend fun setQuantity(item: CollectionCard, qty: Int) {
-        if (qty <= 0) cards.delete(item) else cards.update(item.copy(quantity = qty))
+        if (qty <= 0) cards.delete(item) else cards.setQuantity(item.id, qty)
     }
 
     suspend fun setFoil(item: CollectionCard, foil: Boolean) = moveTo(item, item.card, foil)
@@ -43,8 +62,9 @@ class Repository(
     suspend fun changePrinting(item: CollectionCard, newCard: CardData) = moveTo(item, newCard, item.foil)
 
     /** Updates the row in place, merging into an existing row if that printing/finish is already owned. */
-    private suspend fun moveTo(item: CollectionCard, card: CardData, foil: Boolean) {
-        if (item.card.scryfallId == card.scryfallId && item.foil == foil) return
+    private suspend fun moveTo(original: CollectionCard, card: CardData, foil: Boolean) = db.withTransaction {
+        val item = checkNotNull(cards.get(original.id)) { "This card is no longer in your collection" }
+        if (item.card.scryfallId == card.scryfallId && item.foil == foil) return@withTransaction
         val target = cards.find(card.scryfallId, foil)
         if (target != null) {
             cards.update(target.copy(quantity = target.quantity + item.quantity))
@@ -61,7 +81,11 @@ class Repository(
         all.chunked(75).forEachIndexed { idx, chunk ->
             val res = api.collection(chunk.map { JSONObject().put("id", it.card.scryfallId) })
             chunk.zip(res).forEach { (item, fresh) ->
-                if (fresh != null) { cards.update(item.copy(card = fresh)); updated++ }
+                if (fresh != null) db.withTransaction {
+                    cards.get(item.id)?.let { current ->
+                        cards.update(current.copy(card = fresh)); updated++
+                    }
+                }
             }
             progress(minOf((idx + 1) * 75, all.size), all.size)
         }
@@ -71,6 +95,7 @@ class Repository(
     // ---------- CSV ----------
 
     suspend fun exportCsv(uri: Uri): Int = withContext(Dispatchers.IO) {
+        access.requirePro(ProFeature.CSV)
         val all = cards.getAll().sortedBy { it.card.name }
         context.contentResolver.openOutputStream(uri, "wt")!!.bufferedWriter().use { w ->
             w.write("Quantity,Name,Set,Collector Number,Foil,Scryfall ID\n")
@@ -86,6 +111,7 @@ class Repository(
     data class ImportResult(val imported: Int, val failed: List<String>)
 
     suspend fun importCsv(uri: Uri, progress: (String) -> Unit): ImportResult {
+        access.requirePro(ProFeature.CSV)
         val lines = withContext(Dispatchers.IO) {
             context.contentResolver.openInputStream(uri)!!.bufferedReader().readLines()
         }.filter { it.isNotBlank() }
@@ -149,7 +175,21 @@ class Repository(
     suspend fun deleteDeck(id: Long) = decks.deleteDeck(id)
     suspend fun renameDeck(d: DeckEntity, name: String) = decks.updateDeck(d.copy(name = name))
 
+    suspend fun createManualDeck(name: String, formatId: String): Long {
+        require(name.isNotBlank()) { "Enter a deck name" }
+        require(Formats.all.any { it.id == formatId }) { "Choose a valid format" }
+        return decks.saveDeck(DeckEntity(name = name.trim(), format = formatId, colors = "",
+            commander = null, description = "", createdAt = System.currentTimeMillis()), emptyList())
+    }
+
+    suspend fun generateDecks(format: Format, options: BuildOptions): List<BuiltDeck> {
+        access.requirePro(ProFeature.DECK_GENERATION)
+        val all = cards.getAll()
+        return withContext(Dispatchers.Default) { DeckBuilder(all).build(format, options) }
+    }
+
     suspend fun saveDeck(built: BuiltDeck): Long {
+        access.requirePro(ProFeature.DECK_GENERATION)
         val entity = DeckEntity(
             name = built.name, format = built.format.id, colors = built.colors,
             commander = built.commander?.name, description = built.description,
@@ -167,6 +207,7 @@ class Repository(
 
     /** Saves a Moxfield deck list as one of your decks (cards you don't own are flagged in the deck view). */
     suspend fun saveMoxfieldDeck(deck: MoxDeck, appFormatId: String): Long {
+        access.requirePro(ProFeature.MOXFIELD)
         val entity = DeckEntity(
             name = deck.name, format = appFormatId, colors = deck.colorIdentity,
             commander = deck.cards.firstOrNull { it.section == "commander" }?.name,

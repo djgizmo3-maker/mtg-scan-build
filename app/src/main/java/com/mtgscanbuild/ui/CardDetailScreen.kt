@@ -16,12 +16,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -44,6 +46,7 @@ import com.mtgscanbuild.data.totalPrice
 import com.mtgscanbuild.data.unitPrice
 import com.mtgscanbuild.deck.Formats
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,9 +55,12 @@ fun CardDetailScreen(id: Long, onBack: () -> Unit) {
     val repo = rememberRepo()
     val scope = rememberCoroutineScope()
     val item by remember(id) { repo.observeCard(id) }.collectAsState(initial = null)
+    val folders by remember { repo.collectionFolders }.collectAsState(initial = emptyList())
     val uriHandler = LocalUriHandler.current
     var loaded by remember { mutableStateOf(false) }
     var showPrintings by remember { mutableStateOf(false) }
+    var showFolderPicker by remember { mutableStateOf(false) }
+    var folderError by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(item) { if (item != null) loaded = true else if (loaded) onBack() }
 
     Column(Modifier.fillMaxSize()) {
@@ -84,6 +90,9 @@ fun CardDetailScreen(id: Long, onBack: () -> Unit) {
             }
             OutlinedButton(onClick = { showPrintings = true }, Modifier.fillMaxWidth()) {
                 Text("${c.card.setName} (${c.card.setCode.uppercase()}) #${c.card.collectorNumber} — change")
+            }
+            OutlinedButton(onClick = { showFolderPicker = true }, Modifier.fillMaxWidth()) {
+                Text("Folder: ${folders.find { it.id == c.folderId }?.name ?: "Unfiled"} - move")
             }
             Spacer(Modifier.height(8.dp))
             SectionHeader("TCGplayer market price")
@@ -132,5 +141,22 @@ fun CardDetailScreen(id: Long, onBack: () -> Unit) {
             showPrintings = false
             scope.launch { repo.changePrinting(c, p) }
         }, onDismiss = { showPrintings = false })
+        if (showFolderPicker) FolderPickerDialog(folders, c.folderId, onPick = { folderId ->
+            showFolderPicker = false
+            scope.launch {
+                try {
+                    repo.assignFolder(listOf(c.id), folderId)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    folderError = "Could not move card: ${e.message}"
+                }
+            }
+        }, onDismiss = { showFolderPicker = false })
+        folderError?.let { error ->
+            AlertDialog(onDismissRequest = { folderError = null }, title = { Text("Move failed") },
+                text = { Text(error) },
+                confirmButton = { TextButton(onClick = { folderError = null }) { Text("OK") } })
+        }
     }
 }

@@ -36,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -45,6 +46,7 @@ import coil.imageLoader
 import com.mtgscanbuild.data.Accent
 import com.mtgscanbuild.data.ScanSensitivity
 import com.mtgscanbuild.data.ThemeMode
+import com.mtgscanbuild.data.StartPage
 import com.mtgscanbuild.deck.Formats
 import com.mtgscanbuild.scan.ScanSound
 import kotlinx.coroutines.Dispatchers
@@ -53,8 +55,9 @@ import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalCoilApi::class)
 @Composable
-fun SettingsScreen() {
+fun SettingsScreen(onPro: () -> Unit) {
     val ctx = LocalContext.current
+    val uriHandler = LocalUriHandler.current
     val app = ctx.applicationContext as Application
     val s = remember { app.settings }
     val sounds = remember { app.sounds }
@@ -77,6 +80,18 @@ fun SettingsScreen() {
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         Text("Settings", style = MaterialTheme.typography.headlineSmall)
+
+        if (!app.access.featuresUnlocked) {
+            Section("Basic / Pro")
+            ChoiceRow("Your plan", app.access.label, onClick = onPro)
+            FilledTonalButton(onClick = onPro, modifier = Modifier.fillMaxWidth()) { Text("Compare Basic / Pro") }
+        } else {
+            Section("Startup")
+        }
+        ChoiceRow("Opening page", if (app.access.hasPro) s.startPage.label else "Home - choose another with Pro") {
+            if (app.access.hasPro) picker = "start" else onPro()
+        }
+        Text("Changing the opening page takes effect on the next fresh launch.", style = MaterialTheme.typography.bodySmall)
 
         Section("Scan sound")
         SwitchRow("Play a sound when a card is scanned", s.soundOn) { s.soundOn = it; if (it) preview() }
@@ -107,8 +122,10 @@ fun SettingsScreen() {
         ChoiceRow("Recognition", s.sensitivity.label) { picker = "sensitivity" }
 
         Section("Appearance")
-        ChoiceRow("Theme", s.themeMode.label) { picker = "theme" }
-        ChoiceRow("Accent color", s.accent.label) { picker = "accent" }
+        ChoiceRow("Display mode", s.themeMode.label) { picker = "theme" }
+        ChoiceRow("Mana theme", s.accent.label) { picker = "accent" }
+        Text("Land wallpapers follow your mana theme on every page except Scan.",
+            style = MaterialTheme.typography.bodySmall)
         SwitchRow("Show card pictures in lists", s.showImages, "Turn off to save mobile data") { s.showImages = it }
 
         Section("Deck builder")
@@ -130,8 +147,13 @@ fun SettingsScreen() {
             }
         }
 
+        AdvertisingPrivacyOptions()
+
         Section("About")
         Text("MTG Scan & Build $version", fontWeight = FontWeight.Bold)
+        TextButton(onClick = {
+            uriHandler.openUri("https://djgizmo3-maker.github.io/mtg-scan-build/privacy/")
+        }) { Text("Privacy policy") }
         Text(
             "Card data and images from Scryfall. Magic: The Gathering is © Wizards of the Coast. " +
                 "This app is unofficial and not affiliated with Wizards of the Coast.",
@@ -141,6 +163,9 @@ fun SettingsScreen() {
     }
 
     when (picker) {
+        "start" -> PickerDialog("Opening page", StartPage.entries, s.startPage, { it.label }, onDismiss = { picker = null }) {
+            s.startPage = it; picker = null
+        }
         "sound" -> PickerDialog("Scan sound", ScanSound.entries, s.sound, { soundLabel(it, s.customSoundName) }, onDismiss = { picker = null }) {
             if (it == ScanSound.CUSTOM && s.customSoundUri == null) soundFile.launch(arrayOf("audio/*"))
             else { s.sound = it; preview() }
@@ -148,10 +173,10 @@ fun SettingsScreen() {
         "sensitivity" -> PickerDialog("Recognition", ScanSensitivity.entries, s.sensitivity, { it.label }, onDismiss = { picker = null }) {
             s.sensitivity = it; picker = null
         }
-        "theme" -> PickerDialog("Theme", ThemeMode.entries, s.themeMode, { it.label }, onDismiss = { picker = null }) {
+        "theme" -> PickerDialog("Display mode", ThemeMode.entries, s.themeMode, { it.label }, onDismiss = { picker = null }) {
             s.themeMode = it; picker = null
         }
-        "accent" -> PickerDialog("Accent color", Accent.entries, s.accent, { it.label }, onDismiss = { picker = null }) {
+        "accent" -> PickerDialog("Mana theme", Accent.entries, s.accent, { it.label }, onDismiss = { picker = null }) {
             s.accent = it; picker = null
         }
         "format" -> PickerDialog("Default format", Formats.all, Formats.byId(s.defaultFormat), { it.name }, onDismiss = { picker = null }) {

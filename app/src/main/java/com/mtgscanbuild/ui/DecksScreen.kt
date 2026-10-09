@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -39,10 +40,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,6 +67,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 
 // ---------------------------------------------------------------- saved decks list
 
@@ -71,24 +75,39 @@ import kotlinx.coroutines.withContext
 @Composable
 fun DecksScreen(onBuild: () -> Unit, onOpen: (Long) -> Unit, onMoxfield: () -> Unit) {
     val repo = rememberRepo()
+    val scope = rememberCoroutineScope()
+    var createManual by remember { mutableStateOf(false) }
+    var createError by remember { mutableStateOf<String?>(null) }
+    var createdDeckId by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(createdDeckId) {
+        createdDeckId?.let { id ->
+            createdDeckId = null
+            onOpen(id)
+        }
+    }
     val decks by remember { repo.savedDecks }.collectAsState(initial = emptyList())
+    val buildLabel = if (repo.access.hasPro) "Build a deck" else "Generate deck (Pro)"
     Scaffold(
+        containerColor = Color.Transparent,
         topBar = {
             TopAppBar(title = { Text("Decks") }, actions = {
-                TextButton(onClick = onMoxfield) { Text("Moxfield") }
+                TextButton(onClick = { createManual = true; createError = null }) { Text("New deck") }
+                TextButton(onClick = onMoxfield) { Text(if (repo.access.hasPro) "Moxfield" else "Moxfield (Pro)") }
             })
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(onClick = onBuild, icon = { Icon(Icons.Filled.Add, null) }, text = { Text("Build a deck") })
+            ExtendedFloatingActionButton(onClick = onBuild, icon = { Icon(Icons.Filled.Add, buildLabel) },
+                text = { Text(buildLabel) })
         }
     ) { pad ->
-        if (decks.isEmpty()) {
-            Text(
-                "No saved decks yet.\n\nTap \"Build a deck\" to generate playable decks for any format using only the cards in your collection, or tap \"Moxfield\" to compare your collection with popular Moxfield decks.",
-                Modifier.padding(pad).padding(24.dp)
-            )
-        }
         LazyColumn(Modifier.padding(pad).fillMaxSize()) {
+            if (decks.isEmpty()) item {
+                Text(
+                    "No saved decks yet.\n\nUse New deck to create and edit your own decks without a limit. " +
+                        "Pro also includes automatic deck generation and Moxfield comparison.",
+                    Modifier.padding(24.dp)
+                )
+            }
             items(decks, key = { it.id }) { d ->
                 Row(
                     Modifier.fillMaxWidth().clickable { onOpen(d.id) }.padding(16.dp),
@@ -104,6 +123,50 @@ fun DecksScreen(onBuild: () -> Unit, onOpen: (Long) -> Unit, onMoxfield: () -> U
             }
         }
     }
+    if (createManual) ManualDeckDialog(createError, onCreate = { name, formatId ->
+        createError = null
+        scope.launch {
+            try {
+                val id = repo.createManualDeck(name, formatId)
+                createManual = false
+                createdDeckId = id
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                createError = "Could not create deck: ${e.message}"
+            }
+        }
+    }, onDismiss = { createManual = false })
+}
+
+@Composable
+private fun ManualDeckDialog(error: String?, onCreate: (String, String) -> Unit, onDismiss: () -> Unit) {
+    var name by remember { mutableStateOf("") }
+    var format by remember { mutableStateOf(Formats.all.first()) }
+    var menu by remember { mutableStateOf(false) }
+    var saving by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(error) { if (error != null) saving = false }
+    AlertDialog(onDismissRequest = { if (!saving) onDismiss() }, title = { Text("New deck") },
+        text = {
+            Column {
+                OutlinedTextField(name, { name = it }, label = { Text("Deck name") }, singleLine = true, enabled = !saving)
+                Box {
+                    OutlinedButton(onClick = { menu = true }, enabled = !saving) { Text("Format: ${format.name}") }
+                    DropdownMenu(menu, { menu = false }) {
+                        Formats.all.forEach { f ->
+                            DropdownMenuItem({ Text(f.name) }, { format = f; menu = false })
+                        }
+                    }
+                }
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { saving = true; onCreate(name, format.id) }, enabled = name.isNotBlank() && !saving) {
+                Text(if (saving) "Creating..." else "Create")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !saving) { Text("Cancel") } })
 }
 
 // ---------------------------------------------------------------- builder
@@ -120,6 +183,7 @@ class BuilderViewModel(app: Application) : AndroidViewModel(app) {
     var commanderOptions by mutableStateOf<List<String>>(emptyList())
     var results by mutableStateOf<List<BuiltDeck>?>(null)
     var building by mutableStateOf(false)
+    var error by mutableStateOf<String?>(null)
     var legalCount by mutableStateOf(0)
     var owned by mutableStateOf(DeckCompare.OwnedIndex(emptyList()))
     private var job: Job? = null
@@ -147,19 +211,31 @@ class BuilderViewModel(app: Application) : AndroidViewModel(app) {
         job = viewModelScope.launch {
             building = true
             results = null
-            val all = repo.allCards()
-            val opts = BuildOptions(colors, commander, buildAround.trim().ifEmpty { null }, assumeBasics, colorless = colorless)
-            val f = format
-            val (index, built) = withContext(Dispatchers.Default) {
-                DeckCompare.OwnedIndex(all) to DeckBuilder(all).build(f, opts)
+            error = null
+            try {
+                val opts = BuildOptions(colors, commander, buildAround.trim().ifEmpty { null }, assumeBasics, colorless = colorless)
+                val built = repo.generateDecks(format, opts)
+                owned = DeckCompare.OwnedIndex(repo.allCards())
+                results = built
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                error = "Could not generate decks: ${e.message}"
+            } finally {
+                building = false
             }
-            owned = index
-            results = built
-            building = false
         }
     }
 
-    fun save(d: BuiltDeck, onSaved: (Long) -> Unit) = viewModelScope.launch { onSaved(repo.saveDeck(d)) }
+    fun save(d: BuiltDeck, onSaved: (Long) -> Unit) = viewModelScope.launch {
+        try {
+            onSaved(repo.saveDeck(d))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            error = "Could not save deck: ${e.message}"
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -174,6 +250,7 @@ fun BuilderScreen(onBack: () -> Unit, onSaved: (Long) -> Unit, onMoxfield: () ->
             navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, "Back") } }
         )
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+            vm.error?.let { message -> item { Text(message, color = MaterialTheme.colorScheme.error) } }
             item {
                 Text("Format", style = MaterialTheme.typography.labelLarge)
                 Box {
