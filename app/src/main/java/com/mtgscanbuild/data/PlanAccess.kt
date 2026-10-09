@@ -63,7 +63,7 @@ class PlanAccess(
         const val PRO_PURCHASE_OPTION_ID = "pro-unlock"
         const val CHECKOUT_ENABLED = false
         /** Every feature is free while Pro is paused; set to false to restore the Basic/Pro split. */
-        const val ALL_FEATURES_UNLOCKED = false
+        const val ALL_FEATURES_UNLOCKED = true
     }
 }
 
