@@ -30,6 +30,7 @@ android {
         }
         release {
             isMinifyEnabled = false
+            buildConfigField("boolean", "PRODUCTION_ADS_ENABLED", "true")
             manifestPlaceholders["admobAppId"] = "ca-app-pub-6488482599060029~3946624994"
             buildConfigField("String", "BANNER_AD_UNIT_ID", "\"ca-app-pub-6488482599060029/8235197674\"")
         }
