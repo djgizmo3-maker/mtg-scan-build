@@ -6,7 +6,7 @@ An Android app that scans your Magic: The Gathering cards with the phone camera,
 
 - **Mana themes and land wallpapers:** Appearance settings offer White/Plains, Blue/Island, Black/Swamp, Red/Mountain, Green/Forest, and Colorless/Wastes. Each uses an original illustrated landscape at 18% opacity behind every page except Scan, including Home's News, Banned/Restricted, and Rulebook tabs and card/deck details. Cards, dialogs, toolbars, and navigation retain solid surfaces for readability. Artwork is bundled as local drawing code, works offline, and uses no card art. Dark, Light, and Follow phone remain separate **Display mode** options; the optional Android 12+ phone-color theme uses Wastes artwork. Existing saved accent selections are preserved; the former Arcane purple option is now Colorless/Wastes.
 
-- **Basic / Pro plans:** Settings includes a comparison table. Basic has unlimited scanning, collection cards, and manual/saved decks; Home, folder colors/values, and up to five user-created folders. Pro adds unlimited folder creation, generated decks, Moxfield comparison, CSV/list import and CSV export, and a selectable opening page. Home remains the Basic/default opening page. Existing folders above the Basic limit stay readable, editable, and deletable; no cards or decks are removed by plan limits. Use **Decks > New deck** for free manual deck creation.
+- **Fully unlocked:** Pro purchases are paused. All features, including unlimited folders, generated decks, Moxfield comparison, CSV import/export, and the opening-page picker, are available without a purchase. Small banner ads appear outside the Scan screen, subject to age, consent, and ad availability.
 - **Home (opening page):** tabs for current Wizards of the Coast news headlines, banned/restricted cards, and a rulebook. News opens the original official articles. Banned and restricted lists load live from Scryfall, grouped by tabletop/1v1, multiplayer, and Arena formats, with card search, separate restricted lists, refresh controls, and last-fetched times. These are current legality snapshots, not ban history; cards excluded by rotation or format eligibility are not labeled banned. Official Wizards lists and announcements are linked for effective dates and tournament decisions. Rulebook includes original quick references for Constructed, Commander, Oathbreaker, Arena/Brawl, Draft, Sealed, and Two-Headed Giant, plus links to current official basic, comprehensive, format, and tournament rules. Full documents/articles open in the browser; quick references work offline. Home feeds require internet; refresh failures are shown explicitly, and an already-loaded snapshot remains visible with a warning.
 - **Camera scanning:** on-device text recognition (ML Kit) reads the card name inside an on-screen frame and fuzzy-matches it against every card name on Scryfall. Includes tap-to-focus, pinch-to-zoom, a flashlight toggle, optional auto-add, a scan sound with vibration, and Undo.
 - **Scan sounds:** choose from Chime, Classic scanner beep, Coin, Mana sparkle, Bell ding, Laser, Deep thump, or your own audio file. Sounds use the media volume, so they work on vibrate.
@@ -22,13 +22,22 @@ An Android app that scans your Magic: The Gathering cards with the phone camera,
 
 Download the APK from the [Releases](../../releases) page, copy it to your phone, allow "Install unknown apps", and open it. The first launch needs internet to download the card-name list (one time). Requires Android 8.0 (API 26) or newer.
 
+GitHub updates are installed manually. The public APK uses `com.mtgscanbuild` and the normal app icon, not the developer edition. Google Play may sign its version with a different key, preventing an in-place switch between Play and GitHub installations. Before uninstalling, export your collection to CSV. CSV does not back up folders, saved decks, or settings; uninstalling deletes local app data.
+
+Privacy policy: https://djgizmo3-maker.github.io/mtg-scan-build/privacy/
+
+### Current distribution status
+
+Version 1.4 (version code 9) is distributed as a signed APK through GitHub Releases; Google Play production launch is deferred. Production banner ads are enabled in release builds, and consent messages are published in AdMob. Banner loading was confirmed on a physical device using Play internal testing version code 9; the GitHub APK requires separate installation validation. Older Basic/Pro and billing-readiness notes below describe the preserved Pro implementation, not the current unlocked release.
+
 ## Build variants and Google Play preparation
 
 Requirements: JDK 17 and the Android SDK (API 36).
 
 ```
 gradlew.bat :app:assembleDeveloperRelease  # Fully unlocked personal testing APK
-gradlew.bat :app:assemblePlayDebug         # Basic plan / feature-gate testing APK
+gradlew.bat :app:assemblePlayDebug         # Unlocked testing APK with sample ads
+gradlew.bat :app:assemblePlayRelease       # Public GitHub APK; private signing still required
 gradlew.bat :app:bundlePlayRelease         # Public app bundle; release signing still required
 ```
 

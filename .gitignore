@@ -17,6 +17,7 @@ google-services.json
 # Built APKs (published as GitHub Release assets instead)
 *.apk
 *.aab
+app/play/
 
 # Signing keys
 *.jks
