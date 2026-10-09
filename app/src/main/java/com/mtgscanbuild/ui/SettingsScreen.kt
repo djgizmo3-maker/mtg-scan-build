@@ -81,7 +81,7 @@ fun SettingsScreen(onPro: () -> Unit) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         Text("Settings", style = MaterialTheme.typography.headlineSmall)
 
-        if (!app.access.featuresUnlocked) {
+        if (!app.access.featuresUnlocked || app.access.developerUnlocked) {
             Section("Basic / Pro")
             ChoiceRow("Your plan", app.access.label, onClick = onPro)
             FilledTonalButton(onClick = onPro, modifier = Modifier.fillMaxWidth()) { Text("Compare Basic / Pro") }
